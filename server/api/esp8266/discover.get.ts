@@ -4,25 +4,69 @@
  */
 
 export default defineEventHandler(async (event) => {
-  // Hinweis: mDNS Discovery funktioniert nur serverseitig
-  // Für Browser-basierte Discovery müsste der User die IP manuell eingeben
-  // oder wir verwenden einen Backend-Service
-
   try {
-    // Placeholder für mDNS Discovery
-    // In Produktion würde hier ein mDNS-Scanner laufen
-    // z.B. mit dem 'bonjour' oder 'mdns' npm package
-
-    // Beispiel-Response (in Produktion würde hier echte Discovery stattfinden)
+    const query = getQuery(event)
+    const subnet = query.subnet as string || '192.168.1' // Default subnet
+    
+    console.log(`Scanning subnet ${subnet}.x for Framolux devices...`)
+    
     const devices: any[] = []
-
-    // Versuche bekannte IPs zu pingen (Fallback)
-    // In einer echten Implementierung würde hier mDNS verwendet werden
-
+    const scanPromises: Promise<void>[] = []
+    
+    // Scanne IP-Range (z.B. 192.168.1.1 - 192.168.1.254)
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${subnet}.${i}`
+      
+      const scanPromise = (async () => {
+        try {
+          // Versuche HTTP Request zum ESP8266
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 1000) // 1s timeout
+          
+          const response = await fetch(`http://${ip}/api/info`, {
+            signal: controller.signal,
+            headers: {
+              'Accept': 'application/json',
+            },
+          })
+          
+          clearTimeout(timeoutId)
+          
+          if (response.ok) {
+            const data = await response.json()
+            
+            // Prüfe ob es ein Framolux-Gerät ist
+            if (data.firmware === 'framolux' || data.deviceId?.startsWith('FLX')) {
+              console.log(`Found Framolux device at ${ip}:`, data)
+              devices.push({
+                ip,
+                deviceId: data.deviceId,
+                deviceName: data.deviceName || 'Unnamed',
+                firmware: data.firmware,
+                version: data.version,
+                ssid: data.ssid,
+                frameCount: data.frameCount || 0,
+              })
+            }
+          }
+        } catch (error) {
+          // Ignore - device not found or timeout
+        }
+      })()
+      
+      scanPromises.push(scanPromise)
+    }
+    
+    // Warte auf alle Scans (max 1s pro IP)
+    await Promise.all(scanPromises)
+    
+    console.log(`Discovery complete. Found ${devices.length} Framolux devices.`)
+    
     return {
       success: true,
       devices,
-      message: 'Device discovery completed. For now, please use manual IP input.',
+      subnet,
+      message: `Found ${devices.length} Framolux device(s)`,
     }
   } catch (error) {
     console.error('Discovery error:', error)

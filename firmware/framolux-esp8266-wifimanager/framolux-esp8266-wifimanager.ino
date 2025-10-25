@@ -16,6 +16,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+#include <FastLED.h>      // https://github.com/FastLED/FastLED
 
 // Device ID (wird beim Kompilieren gesetzt, oder zufällig generiert)
 #ifndef DEVICE_ID
@@ -28,6 +29,15 @@
 #define MAX_FRAMES 100
 #define FRAME_FILE "/frames.json"
 #define CONFIG_FILE "/config.json"
+
+// Hardware Pin Configuration
+#define DATA_PIN D4        // GPIO2 - Pin für LED Matrix / Display
+#define LED_TYPE WS2812B   // LED Typ (WS2812B, WS2811, APA102, etc.)
+#define COLOR_ORDER GRB    // Farbreihenfolge (GRB für WS2812B)
+#define MATRIX_WIDTH 16    // Breite der LED Matrix (muss mit OpenAI Schema übereinstimmen!)
+#define MATRIX_HEIGHT 16   // Höhe der LED Matrix (muss mit OpenAI Schema übereinstimmen!)
+#define NUM_LEDS (MATRIX_WIDTH * MATRIX_HEIGHT)  // = 256 LEDs
+#define BRIGHTNESS 50      // Helligkeit (0-255)
 #define WIFI_CONFIG_FILE "/wifi.json"
 
 ESP8266WebServer server(WEB_SERVER_PORT);
@@ -38,6 +48,17 @@ String deviceId;
 String deviceName = DEFAULT_DEVICE_NAME;
 String macAddress;
 int frameCount = 0;
+
+// LED Matrix
+CRGB leds[NUM_LEDS];
+int currentFrameIndex = -1;
+unsigned long frameStartTime = 0;
+
+// Frame Struktur (für OpenAI generierte Pixel-Frames)
+struct Frame {
+  int duration;  // Frame-Dauer in Millisekunden
+  // pixels wird direkt aus JSON gelesen (16x16 Array von Hex-Farben)
+};
 
 // WiFi Manager Callback
 void configModeCallback(WiFiManager *myWiFiManager) {
@@ -77,6 +98,20 @@ void setup() {
   
   Serial.println("Device ID: " + deviceId);
   Serial.println("MAC Address: " + macAddress);
+  
+  // FastLED / LED Matrix initialisieren
+  FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+  FastLED.setBrightness(BRIGHTNESS);
+  FastLED.clear();
+  FastLED.show();
+  Serial.println("LED Matrix initialized: " + String(MATRIX_WIDTH) + "x" + String(MATRIX_HEIGHT) + " = " + String(NUM_LEDS) + " LEDs");
+  
+  // Startup Animation: Kurzes Blinken
+  fill_solid(leds, NUM_LEDS, CRGB::Blue);
+  FastLED.show();
+  delay(200);
+  FastLED.clear();
+  FastLED.show();
   
   // LittleFS initialisieren
   if (!LittleFS.begin()) {
@@ -166,11 +201,265 @@ void setup() {
 }
 
 /**
+ * Verarbeite Serial Commands für Konfiguration
+ */
+void handleSerialCommands() {
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    
+    if (command.startsWith("SET_WIFI:")) {
+      // Format: SET_WIFI:SSID:PASSWORD
+      int firstColon = command.indexOf(':', 9);
+      int secondColon = command.indexOf(':', firstColon + 1);
+      
+      if (firstColon > 0 && secondColon > 0) {
+        String ssid = command.substring(9, firstColon);
+        String password = command.substring(firstColon + 1, secondColon);
+        
+        Serial.println("Configuring WiFi via Serial...");
+        Serial.println("SSID: " + ssid);
+        
+        // Speichere Config
+        WiFi.begin(ssid.c_str(), password.c_str());
+        
+        // Warte auf Verbindung
+        int attempts = 0;
+        while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+          delay(500);
+          Serial.print(".");
+          attempts++;
+        }
+        
+        if (WiFi.status() == WL_CONNECTED) {
+          Serial.println("\nWiFi connected via Serial!");
+          Serial.println("IP: " + WiFi.localIP().toString());
+          saveConfig(); // Speichere für nächsten Boot
+        } else {
+          Serial.println("\nWiFi connection failed!");
+        }
+      }
+    }
+    else if (command.startsWith("SET_NAME:")) {
+      // Format: SET_NAME:DeviceName
+      String name = command.substring(9);
+      deviceName = name;
+      saveConfig();
+      Serial.println("Device name set to: " + deviceName);
+    }
+    else if (command.startsWith("SET_APIKEY:")) {
+      // Format: SET_APIKEY:sk-proj-xxxxx
+      String apiKey = command.substring(11);
+      apiKey.trim();
+      
+      if (apiKey.length() > 0) {
+        // Speichere API Key in LittleFS
+        File file = LittleFS.open("/apikey.txt", "w");
+        if (file) {
+          file.println(apiKey);
+          file.close();
+          Serial.println("OpenAI API Key saved successfully!");
+          Serial.println("Key length: " + String(apiKey.length()) + " characters");
+        } else {
+          Serial.println("Failed to save API Key!");
+        }
+      } else {
+        Serial.println("Invalid API Key!");
+      }
+    }
+    else if (command == "GET_APIKEY") {
+      // Lese API Key (zeige nur erste und letzte 4 Zeichen)
+      File file = LittleFS.open("/apikey.txt", "r");
+      if (file) {
+        String apiKey = file.readStringUntil('\n');
+        apiKey.trim();
+        file.close();
+        
+        if (apiKey.length() > 8) {
+          String masked = apiKey.substring(0, 7) + "..." + apiKey.substring(apiKey.length() - 4);
+          Serial.println("API Key: " + masked);
+        } else {
+          Serial.println("API Key: (too short to display)");
+        }
+      } else {
+        Serial.println("No API Key configured");
+      }
+    }
+    else if (command == "DELETE_APIKEY") {
+      if (LittleFS.remove("/apikey.txt")) {
+        Serial.println("API Key deleted successfully!");
+      } else {
+        Serial.println("No API Key to delete");
+      }
+    }
+    else if (command == "GET_STATUS") {
+      Serial.println("\n=== Device Status ===");
+      Serial.println("Device ID: " + deviceId);
+      Serial.println("Device Name: " + deviceName);
+      Serial.println("WiFi Status: " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("IP Address: " + WiFi.localIP().toString());
+        Serial.println("SSID: " + WiFi.SSID());
+      }
+      
+      // API Key Status
+      File apiKeyFile = LittleFS.open("/apikey.txt", "r");
+      if (apiKeyFile) {
+        String key = apiKeyFile.readStringUntil('\n');
+        key.trim();
+        apiKeyFile.close();
+        if (key.length() > 8) {
+          String masked = key.substring(0, 7) + "..." + key.substring(key.length() - 4);
+          Serial.println("OpenAI API Key: " + masked);
+        } else {
+          Serial.println("OpenAI API Key: Configured (short)");
+        }
+      } else {
+        Serial.println("OpenAI API Key: Not configured");
+      }
+      
+      Serial.println("Frame Count: " + String(frameCount));
+      Serial.println("===================\n");
+    }
+    else if (command == "RESET_WIFI") {
+      Serial.println("Resetting WiFi config...");
+      WiFi.disconnect(true);
+      delay(1000);
+      ESP.restart();
+    }
+  }
+}
+
+/**
+ * Konvertiere Hex-Farbe zu CRGB
+ */
+CRGB hexToRGB(String hexColor) {
+  // Entferne # falls vorhanden
+  hexColor.replace("#", "");
+  
+  long number = strtol(hexColor.c_str(), NULL, 16);
+  int r = number >> 16;
+  int g = (number >> 8) & 0xFF;
+  int b = number & 0xFF;
+  
+  return CRGB(r, g, b);
+}
+
+/**
+ * Zeige Pixel-Array auf LED Matrix
+ * Konvertiert 16x16 Pixel-Array zu LED Matrix Layout
+ */
+void displayPixelArray(JsonArray pixelArray) {
+  // pixelArray ist ein 16x16 Array von Hex-Farben
+  // z.B. [["#FF0000", "#00FF00", ...], [...], ...]
+  
+  int arrayHeight = pixelArray.size();
+  
+  for (int y = 0; y < arrayHeight && y < MATRIX_HEIGHT; y++) {
+    JsonArray row = pixelArray[y];
+    int arrayWidth = row.size();
+    
+    for (int x = 0; x < arrayWidth && x < MATRIX_WIDTH; x++) {
+      String hexColor = row[x].as<String>();
+      CRGB color = hexToRGB(hexColor);
+      
+      // Berechne LED-Index basierend auf Matrix-Layout
+      // Annahme: Serpentine Layout (Zick-Zack)
+      int ledIndex;
+      if (y % 2 == 0) {
+        // Gerade Zeile: links nach rechts
+        ledIndex = y * MATRIX_WIDTH + x;
+      } else {
+        // Ungerade Zeile: rechts nach links
+        ledIndex = y * MATRIX_WIDTH + (MATRIX_WIDTH - 1 - x);
+      }
+      
+      if (ledIndex < NUM_LEDS) {
+        leds[ledIndex] = color;
+      }
+    }
+  }
+  
+  FastLED.show();
+}
+
+/**
+ * Lade und zeige Frames
+ */
+void updateFrameDisplay() {
+  // Prüfe ob Frames vorhanden sind
+  if (frameCount == 0) {
+    // Keine Frames - zeige Idle-Animation
+    static unsigned long lastUpdate = 0;
+    if (millis() - lastUpdate > 2000) {
+      lastUpdate = millis();
+      
+      // Sanftes Pulsieren in Blau
+      static uint8_t hue = 0;
+      fill_solid(leds, NUM_LEDS, CHSV(160, 255, 50 + sin8(hue) / 5));
+      FastLED.show();
+      hue += 2;
+    }
+    return;
+  }
+  
+  // Lade Frames aus LittleFS und zeige sie
+  File file = LittleFS.open(FRAME_FILE, "r");
+  if (!file) return;
+  
+  StaticJsonDocument<4096> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  
+  if (error) return;
+  
+  JsonArray framesArray = doc["frames"];
+  if (framesArray.size() == 0) return;
+  
+  // Zeige aktuellen Frame
+  if (currentFrameIndex < 0 || currentFrameIndex >= (int)framesArray.size()) {
+    currentFrameIndex = 0;
+    frameStartTime = millis();
+  }
+  
+  JsonObject frameObj = framesArray[currentFrameIndex];
+  
+  // Hole Frame-Daten
+  int duration = frameObj["duration"] | 3000;
+  JsonArray pixels = frameObj["pixels"];
+  
+  // Zeige Frame (Pixel-Array)
+  if (pixels.size() > 0) {
+    displayPixelArray(pixels);
+  }
+  
+  // Wechsle zum nächsten Frame nach Ablauf der Duration
+  if (millis() - frameStartTime > (unsigned long)duration) {
+    currentFrameIndex++;
+    if (currentFrameIndex >= (int)framesArray.size()) {
+      currentFrameIndex = 0; // Loop
+    }
+    frameStartTime = millis();
+  }
+}
+
+/**
  * Main Loop
  */
 void loop() {
+  // HTTP Server
   server.handleClient();
+  
+  // Serial Commands
+  handleSerialCommands();
+  
+  // mDNS Update
   MDNS.update();
+  
+  // LED Matrix Update
+  updateFrameDisplay();
+  
+  delay(10);
 }
 
 /**
@@ -204,6 +493,7 @@ void setupRoutes() {
   
   // GET /info - Device Info
   server.on("/info", HTTP_GET, handleInfo);
+  server.on("/api/info", HTTP_GET, handleInfo); // Alias für Discovery
   
   // PUT /config - Update Device Config (Name ändern)
   server.on("/config", HTTP_PUT, handleUpdateConfig);

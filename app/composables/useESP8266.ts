@@ -32,22 +32,28 @@ export const useESP8266 = () => {
 
   /**
    * Scanne nach ESP8266 Geräten im lokalen Netzwerk
-   * Verwendet mDNS Discovery über Backend
+   * Verwendet IP-Range Scan über Backend
    */
-  const scanForDevices = async () => {
+  const scanForDevices = async (subnet?: string) => {
     isScanning.value = true
     devices.value = []
 
     try {
-      // Versuche mDNS Discovery
-      const response = await $fetch<{ devices: ESP8266Device[] }>('/api/esp8266/discover', {
+      console.log('Starting device scan...')
+      
+      // IP-Range Scan über Backend
+      const response = await $fetch<{ success: boolean, devices: ESP8266Device[], subnet: string }>('/api/esp8266/discover', {
         method: 'GET',
+        query: subnet ? { subnet } : {},
       })
 
+      console.log(`Scan complete. Found ${response.devices.length} devices.`)
       devices.value = response.devices
+      
+      return response.devices
     } catch (error) {
       console.error('Device scan failed:', error)
-      // Fallback: Manuelle IP-Eingabe
+      return []
     } finally {
       isScanning.value = false
     }
@@ -345,6 +351,48 @@ export const useESP8266 = () => {
     }
   }
 
+  /**
+   * Sende Test-Frame an Gerät
+   */
+  const sendTestFrame = async (ip: string) => {
+    try {
+      // Erstelle einfachen Test-Frame (16x16 Pixel-Array)
+      // Zeige ein grünes Kreuz auf schwarzem Hintergrund
+      const pixels: string[][] = []
+      for (let y = 0; y < 16; y++) {
+        const row: string[] = []
+        for (let x = 0; x < 16; x++) {
+          // Grünes Kreuz in der Mitte
+          if (x === 8 || y === 8) {
+            row.push('#00FF00')
+          } else {
+            row.push('#000000')
+          }
+        }
+        pixels.push(row)
+      }
+
+      const testFrame = {
+        pixels,
+        duration: 3000,
+      }
+
+      const response = await $fetch(`http://${ip}/frames`, {
+        method: 'POST',
+        body: {
+          description: 'Test Animation',
+          loop: true,
+          frames: [testFrame],
+        },
+      })
+
+      return { success: true, response }
+    } catch (error) {
+      console.error('Test frame failed:', error)
+      return { success: false, error }
+    }
+  }
+
   return {
     devices,
     selectedDevice,
@@ -364,5 +412,6 @@ export const useESP8266 = () => {
     loadWiFiConfig,
     saveKnownDevices,
     loadKnownDevices,
+    sendTestFrame,
   }
 }
