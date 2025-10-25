@@ -1,0 +1,333 @@
+/**
+ * Composable für ESP8266 Integration
+ * Handles WiFi-Konfiguration, Firmware-Flash und Frame-Upload
+ */
+
+export interface ESP8266Device {
+  deviceId: string
+  deviceName: string
+  ip: string
+  mac: string
+  ssid: string
+  rssi: number
+  status: 'online' | 'offline'
+  frameCount: number
+  customName?: string // User-defined custom name
+}
+
+export interface WiFiConfig {
+  ssid: string
+  password: string
+}
+
+export const useESP8266 = () => {
+  const devices = ref<ESP8266Device[]>([])
+  const selectedDevice = ref<ESP8266Device | null>(null)
+  const isScanning = ref(false)
+  const isUploading = ref(false)
+  const uploadProgress = ref(0)
+
+  /**
+   * Scanne nach ESP8266 Geräten im lokalen Netzwerk
+   * Verwendet mDNS Discovery über Backend
+   */
+  const scanForDevices = async () => {
+    isScanning.value = true
+    devices.value = []
+
+    try {
+      // Versuche mDNS Discovery
+      const response = await $fetch<{ devices: ESP8266Device[] }>('/api/esp8266/discover', {
+        method: 'GET',
+      })
+
+      devices.value = response.devices
+    } catch (error) {
+      console.error('Device scan failed:', error)
+      // Fallback: Manuelle IP-Eingabe
+    } finally {
+      isScanning.value = false
+    }
+  }
+
+  /**
+   * Verbinde mit einem spezifischen Gerät über IP
+   */
+  const connectToDevice = async (ip: string): Promise<ESP8266Device | null> => {
+    try {
+      const response = await $fetch<ESP8266Device>(`http://${ip}/info`, {
+        method: 'GET',
+      })
+
+      const device: ESP8266Device = {
+        ...response,
+        status: 'online',
+      }
+
+      // Füge Gerät zur Liste hinzu, falls noch nicht vorhanden
+      const existingIndex = devices.value.findIndex(d => d.deviceId === device.deviceId)
+      if (existingIndex >= 0) {
+        devices.value[existingIndex] = device
+      } else {
+        devices.value.push(device)
+      }
+
+      selectedDevice.value = device
+      return device
+    } catch (error) {
+      console.error('Failed to connect to device:', error)
+      return null
+    }
+  }
+
+  /**
+   * Prüfe Status eines Geräts
+   */
+  const checkDeviceStatus = async (ip: string) => {
+    try {
+      const response = await $fetch<{
+        status: string
+        deviceId: string
+        frameCount: number
+        freeHeap: number
+        uptime: number
+      }>(`http://${ip}/status`, {
+        method: 'GET',
+      })
+
+      return response
+    } catch (error) {
+      console.error('Failed to check device status:', error)
+      return null
+    }
+  }
+
+  /**
+   * Lade Frames auf ESP8266 hoch
+   */
+  const uploadFramesToDevice = async (
+    deviceIp: string,
+    frames: Array<{ duration: number; leds: string[] }>
+  ) => {
+    isUploading.value = true
+    uploadProgress.value = 0
+
+    try {
+      const payload = {
+        frames,
+        totalFrames: frames.length,
+        timestamp: Date.now(),
+      }
+
+      // Simuliere Upload-Progress (da $fetch kein onUploadProgress unterstützt)
+      const payloadSize = JSON.stringify(payload).length
+      const chunks = Math.ceil(payloadSize / 10000) // Simuliere Chunks
+      
+      const progressInterval = setInterval(() => {
+        if (uploadProgress.value < 90) {
+          uploadProgress.value += Math.floor(90 / chunks)
+        }
+      }, 100)
+
+      const response = await $fetch<{
+        success: boolean
+        frameCount: number
+        message: string
+      }>(`http://${deviceIp}/frames`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      clearInterval(progressInterval)
+
+      uploadProgress.value = 100
+      return response
+    } catch (error) {
+      console.error('Failed to upload frames:', error)
+      throw error
+    } finally {
+      isUploading.value = false
+      setTimeout(() => {
+        uploadProgress.value = 0
+      }, 2000)
+    }
+  }
+
+  /**
+   * Hole gespeicherte Frames vom Gerät
+   */
+  const getFramesFromDevice = async (deviceIp: string) => {
+    try {
+      const response = await $fetch<{
+        frames: Array<{ duration: number; leds: string[] }>
+        totalFrames: number
+      }>(`http://${deviceIp}/frames`, {
+        method: 'GET',
+      })
+
+      return response
+    } catch (error) {
+      console.error('Failed to get frames from device:', error)
+      return null
+    }
+  }
+
+  /**
+   * Lösche alle Frames vom Gerät
+   */
+  const clearFramesOnDevice = async (deviceIp: string) => {
+    try {
+      const response = await $fetch<{
+        success: boolean
+        message: string
+      }>(`http://${deviceIp}/frames`, {
+        method: 'DELETE',
+      })
+
+      return response
+    } catch (error) {
+      console.error('Failed to clear frames:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Ändere Device-Namen
+   */
+  const renameDevice = async (deviceIp: string, newName: string) => {
+    try {
+      const response = await $fetch<{
+        success: boolean
+        deviceName: string
+        message: string
+      }>(`http://${deviceIp}/config`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ deviceName: newName }),
+      })
+
+      // Aktualisiere lokale Device-Liste
+      const device = devices.value.find(d => d.ip === deviceIp)
+      if (device) {
+        device.deviceName = newName
+        saveKnownDevices()
+      }
+
+      return response
+    } catch (error) {
+      console.error('Failed to rename device:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Generiere Build-Command für Firmware mit WiFi-Credentials
+   */
+  const generateBuildCommand = (config: WiFiConfig, deviceId: string = '', upload: boolean = false): string => {
+    const isWindows = navigator.platform.toLowerCase().includes('win')
+    
+    const deviceIdParam = deviceId ? ` -DeviceId "${deviceId}"` : ''
+    const deviceIdParamBash = deviceId ? ` --device-id "${deviceId}"` : ''
+    
+    if (isWindows) {
+      return `powershell -ExecutionPolicy Bypass -File .\\firmware\\build.ps1 -SSID "${config.ssid}" -Password "${config.password}"${deviceIdParam}${upload ? ' -Upload' : ''}`
+    } else {
+      return `./firmware/build.sh --ssid "${config.ssid}" --password "${config.password}"${deviceIdParamBash}${upload ? ' --upload' : ''}`
+    }
+  }
+
+  /**
+   * Speichere WiFi-Konfiguration lokal
+   */
+  const saveWiFiConfig = (config: WiFiConfig) => {
+    if (process.client) {
+      localStorage.setItem('framolux_wifi_config', JSON.stringify(config))
+    }
+  }
+
+  /**
+   * Lade gespeicherte WiFi-Konfiguration
+   */
+  const loadWiFiConfig = (): WiFiConfig | null => {
+    if (process.client) {
+      const stored = localStorage.getItem('framolux_wifi_config')
+      if (stored) {
+        try {
+          return JSON.parse(stored)
+        } catch {
+          return null
+        }
+      }
+    }
+    return null
+  }
+
+  /**
+   * Speichere bekannte Geräte
+   */
+  const saveKnownDevices = () => {
+    if (process.client) {
+      const devicesToSave = devices.value.map(d => ({
+        deviceId: d.deviceId,
+        deviceName: d.deviceName,
+        ip: d.ip,
+        mac: d.mac,
+      }))
+      localStorage.setItem('framolux_known_devices', JSON.stringify(devicesToSave))
+    }
+  }
+
+  /**
+   * Lade bekannte Geräte
+   */
+  const loadKnownDevices = () => {
+    if (process.client) {
+      const stored = localStorage.getItem('framolux_known_devices')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          // Prüfe Status der bekannten Geräte
+          parsed.forEach(async (device: any) => {
+            const status = await checkDeviceStatus(device.ip)
+            if (status) {
+              devices.value.push({
+                ...device,
+                status: 'online',
+                frameCount: status.frameCount,
+                ssid: '',
+                rssi: 0,
+              })
+            }
+          })
+        } catch {
+          // Ignore errors
+        }
+      }
+    }
+  }
+
+  return {
+    devices,
+    selectedDevice,
+    isScanning,
+    isUploading,
+    uploadProgress,
+    scanForDevices,
+    connectToDevice,
+    checkDeviceStatus,
+    uploadFramesToDevice,
+    getFramesFromDevice,
+    clearFramesOnDevice,
+    renameDevice,
+    generateBuildCommand,
+    saveWiFiConfig,
+    loadWiFiConfig,
+    saveKnownDevices,
+    loadKnownDevices,
+  }
+}

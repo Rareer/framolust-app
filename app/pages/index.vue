@@ -3,9 +3,13 @@ import { ref, watch } from 'vue'
 import type { LEDAnimation } from '~/composables/useOpenAI'
 
 const isApiKeyModalOpen = ref(false)
+const isESP8266SetupOpen = ref(false)
 
-// Serial Port for ESP8266
-const { isConnected: isSerialConnected, sendLEDMatrix } = useSerialPort()
+// ESP8266 Network Integration
+const { uploadFramesToDevice, selectedDevice } = useESP8266()
+
+// ESP8266 Status für Anzeige
+const esp8266Status = computed(() => selectedDevice.value)
 
 // Initialize with empty/dark pixels
 const pixels = ref<string[][]>(
@@ -82,17 +86,38 @@ const togglePlayPause = () => {
   }
 }
 
-// Send current matrix to ESP8266
+// Send current matrix to ESP8266 (via HTTP)
 const sendToESP8266 = () => {
-  if (isSerialConnected.value) {
-    sendLEDMatrix(pixels.value)
-  }
+  // Frames werden jetzt über HTTP/WiFi gesendet, nicht mehr über Serial
+  // Die Funktion bleibt für Kompatibilität, macht aber nichts mehr
+  // Frames werden beim "Frames hochladen" Button im ESP8266 Modal gesendet
 }
 
 // Watch for manual pixel changes and send to ESP8266
 watch(() => pixels.value, () => {
   sendToESP8266()
 }, { deep: true })
+
+// Upload frames to ESP8266 via network
+const uploadFramesToESP = async (deviceIp: string) => {
+  if (!currentAnimation.value) {
+    alert('Keine Animation vorhanden!')
+    return
+  }
+
+  try {
+    const frames = currentAnimation.value.frames.map(frame => ({
+      duration: frame.duration,
+      leds: frame.pixels.flat(), // Flatten 2D array to 1D
+    }))
+
+    await uploadFramesToDevice(deviceIp, frames)
+    alert('Frames erfolgreich hochgeladen!')
+  } catch (error) {
+    console.error('Upload failed:', error)
+    alert('Upload fehlgeschlagen!')
+  }
+}
 
 // Cleanup on unmount
 onUnmounted(() => {
@@ -113,8 +138,16 @@ onUnmounted(() => {
             <div class="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-indigo-500 to-transparent rounded-full"></div>
           </div>
           
-          <!-- API Key Button - Top Right -->
-          <div class="absolute top-0 right-0">
+          <!-- API Key & ESP8266 Setup Buttons - Top Right -->
+          <div class="absolute top-0 right-0 flex gap-2">
+            <UButton
+              icon="i-heroicons-cpu-chip"
+              color="success"
+              variant="soft"
+              size="lg"
+              @click="isESP8266SetupOpen = true"
+              title="ESP8266 Setup"
+            />
             <UButton
               icon="i-heroicons-key"
               color="primary"
@@ -131,9 +164,16 @@ onUnmounted(() => {
           <LedMatrix :pixels="pixels" />
         </div>
 
-        <!-- ESP8266 Connection -->
+        <!-- ESP8266 Status -->
         <div class="flex justify-center">
-          <SerialConnection />
+          <div v-if="esp8266Status" class="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span class="text-sm font-medium text-green-400">ESP8266 im Netzwerk: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
+          </div>
+          <div v-else class="flex items-center gap-2 px-4 py-2 bg-gray-500/10 border border-gray-500/20 rounded-lg">
+            <div class="w-2 h-2 bg-gray-400 rounded-full"></div>
+            <span class="text-sm font-medium text-gray-400">Kein ESP8266 verbunden - Klicke auf 🖥️ ESP8266 zum Einrichten</span>
+          </div>
         </div>
 
         <!-- Controls: Prompt Input + Animation Controls -->
@@ -175,5 +215,28 @@ onUnmounted(() => {
 
     <!-- API Key Modal -->
     <ApiKeyModal v-model:open="isApiKeyModalOpen" />
+
+    <!-- ESP8266 Setup Modal -->
+    <UModal v-model:open="isESP8266SetupOpen">
+      <template #body>
+        <UCard class="max-w-4xl">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-xl font-bold">ESP8266 Setup & Verwaltung</h3>
+                <p class="text-sm text-gray-500 mt-1">Firmware flashen oder Geräte verwalten</p>
+              </div>
+              <UButton
+                icon="i-heroicons-x-mark"
+                color="neutral"
+                variant="ghost"
+                @click="isESP8266SetupOpen = false"
+              />
+            </div>
+          </template>
+          <ESP8266Setup @upload-frames="uploadFramesToESP" />
+        </UCard>
+      </template>
+    </UModal>
   </div>
 </template>
