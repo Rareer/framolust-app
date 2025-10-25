@@ -1,14 +1,17 @@
 <script setup lang="ts">
 interface Props {
   pixels: string[][]
+  showGrid?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  showGrid: true
+})
 </script>
 
 <template>
   <div class="led-matrix-wrapper">
-    <div class="led-matrix">
+    <div class="led-matrix" :class="{ 'no-grid': !showGrid }">
       <div
         v-for="(color, index) in pixels.flat()"
         :key="index"
@@ -75,6 +78,10 @@ defineProps<Props>()
   gap: 2px;
 }
 
+.led-matrix.no-grid {
+  gap: 0;
+}
+
 .led-pixel {
   width: 100%;
   height: 100%;
@@ -83,5 +90,10 @@ defineProps<Props>()
   box-shadow: 
     inset 0 0 3px rgba(0, 0, 0, 0.6),
     0 0 2px rgba(0, 0, 0, 0.3);
+}
+
+.no-grid .led-pixel {
+  border-radius: 0;
+  box-shadow: none;
 }
 </style>
