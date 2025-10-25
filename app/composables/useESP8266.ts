@@ -13,6 +13,9 @@ export interface ESP8266Device {
   status: 'online' | 'offline'
   frameCount: number
   customName?: string // User-defined custom name
+  firmware?: string // Firmware identifier (e.g. "framolux")
+  version?: string // Firmware version
+  isFramolux?: boolean // Quick check if it's our firmware
 }
 
 export interface WiFiConfig {
@@ -51,17 +54,48 @@ export const useESP8266 = () => {
   }
 
   /**
+   * Prüfe ob ein Gerät Framolux Firmware hat
+   */
+  const checkFramoluxFirmware = async (ip: string): Promise<{ isFramolux: boolean, version?: string, info?: any }> => {
+    try {
+      const response = await $fetch<any>(`http://${ip}/info`, {
+        method: 'GET',
+        timeout: 3000,
+      })
+
+      // Prüfe ob es unsere Firmware ist
+      const isFramolux = response.firmware === 'framolux'
+      
+      return {
+        isFramolux,
+        version: response.version,
+        info: response
+      }
+    } catch (error) {
+      console.error('Failed to check firmware:', error)
+      return { isFramolux: false }
+    }
+  }
+
+  /**
    * Verbinde mit einem spezifischen Gerät über IP
    */
   const connectToDevice = async (ip: string): Promise<ESP8266Device | null> => {
     try {
-      const response = await $fetch<ESP8266Device>(`http://${ip}/info`, {
-        method: 'GET',
-      })
+      // Prüfe zuerst ob es Framolux Firmware ist
+      const firmwareCheck = await checkFramoluxFirmware(ip)
+      
+      if (!firmwareCheck.isFramolux) {
+        console.warn(`Device at ${ip} does not have Framolux firmware`)
+        return null
+      }
+
+      const response = firmwareCheck.info
 
       const device: ESP8266Device = {
         ...response,
         status: 'online',
+        isFramolux: true,
       }
 
       // Füge Gerät zur Liste hinzu, falls noch nicht vorhanden
@@ -319,6 +353,7 @@ export const useESP8266 = () => {
     uploadProgress,
     scanForDevices,
     connectToDevice,
+    checkFramoluxFirmware,
     checkDeviceStatus,
     uploadFramesToDevice,
     getFramesFromDevice,

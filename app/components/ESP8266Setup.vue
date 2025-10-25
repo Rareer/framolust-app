@@ -92,15 +92,24 @@
             <strong>Verbunden mit:</strong> {{ selectedDevice.deviceName }} ({{ selectedDevice.ip }})
           </p>
           <p class="text-sm">
-            <strong>Gespeicherte Frames:</strong> {{ selectedDevice.frameCount }}
+            <strong>Gespeicherte Frames auf ESP8266:</strong> {{ selectedDevice.frameCount }}
+          </p>
+        </div>
+
+        <!-- Info: Frames aus WebApp hochladen -->
+        <div v-if="hasPendingFrames" class="bg-green-50 border border-green-200 rounded-lg p-4">
+          <p class="text-sm text-green-800">
+            <strong>💡 Tipp:</strong> Du hast eine Animation in der WebApp erstellt. 
+            Klicke auf "Frames hochladen" um sie auf das ESP8266 zu übertragen.
           </p>
         </div>
 
         <div class="flex gap-4">
           <button
             @click="$emit('upload-frames', selectedDevice.ip)"
-            :disabled="isUploading"
+            :disabled="isUploading || !hasPendingFrames"
             class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400"
+            :title="!hasPendingFrames ? 'Erstelle zuerst eine Animation in der WebApp' : ''"
           >
             {{ isUploading ? 'Upload läuft...' : 'Frames hochladen' }}
           </button>
@@ -129,6 +138,14 @@
 </template>
 
 <script setup lang="ts">
+// Props: Aktuelle Animation aus der WebApp
+const props = defineProps<{
+  currentAnimation?: {
+    frames: any[]
+    description: string
+  } | null
+}>()
+
 const emit = defineEmits<{
   'upload-frames': [deviceIp: string]
 }>()
@@ -148,6 +165,11 @@ const {
 
 const showManualConnect = ref(false)
 const manualIp = ref('')
+
+// Prüfe ob Frames zum Upload bereit sind
+const hasPendingFrames = computed(() => {
+  return props.currentAnimation && props.currentAnimation.frames.length > 0
+})
 
 // Lade bekannte Geräte beim Mount
 onMounted(() => {

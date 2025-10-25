@@ -11,10 +11,13 @@ export const useWebSerial = () => {
   const isFlashing = ref(false)
   const flashProgress = ref(0)
   const flashLog = ref<string[]>([])
+  const isFramoluxFirmware = ref(false)
+  const firmwareVersion = ref<string>('')
   
   let port: SerialPort | null = null
   let transport: Transport | null = null
   let esploader: ESPLoader | null = null
+  let reader: ReadableStreamDefaultReader | null = null
 
   /**
    * Prüfe ob Web Serial API unterstützt wird
@@ -77,6 +80,10 @@ export const useWebSerial = () => {
         
         // Überwache Disconnect
         setupDisconnectListener()
+        
+        // Lese Serial Output um Firmware zu erkennen
+        readSerialOutput()
+        
         return true
       } catch (openError: any) {
         // Falls Port bereits offen ist, verwende ihn trotzdem
@@ -118,8 +125,58 @@ export const useWebSerial = () => {
         port = null
         transport = null
         esploader = null
+        reader = null
         isConnected.value = false
+        isFramoluxFirmware.value = false
       })
+    }
+  }
+
+  /**
+   * Lese Serial Output und erkenne Firmware
+   */
+  const readSerialOutput = async () => {
+    if (!port || !port.readable) return
+
+    try {
+      const textDecoder = new TextDecoderStream()
+      port.readable.pipeTo(textDecoder.writable as any)
+      reader = textDecoder.readable.getReader()
+
+      let buffer = ''
+      
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        
+        buffer += value
+        
+        // Prüfe auf Framolux Firmware Identifier
+        if (buffer.includes('FRAMOLUX FIRMWARE')) {
+          isFramoluxFirmware.value = true
+          addLog('✓ Framolux Firmware detected!')
+          
+          // Extrahiere Version
+          const versionMatch = buffer.match(/Version:\s*(\S+)/)
+          if (versionMatch && versionMatch[1]) {
+            firmwareVersion.value = versionMatch[1]
+            addLog(`✓ Firmware Version: ${firmwareVersion.value}`)
+          }
+        }
+        
+        // Zeige Serial Output im Log
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        lines.forEach(line => {
+          if (line.trim()) {
+            addLog(`[Serial] ${line.trim()}`)
+          }
+        })
+      }
+    } catch (error) {
+      console.error('Error reading serial:', error)
+    } finally {
+      reader?.releaseLock()
     }
   }
 
@@ -323,6 +380,8 @@ export const useWebSerial = () => {
     isFlashing,
     flashProgress,
     flashLog,
+    isFramoluxFirmware,
+    firmwareVersion,
     connect,
     disconnect,
     flashFirmware,

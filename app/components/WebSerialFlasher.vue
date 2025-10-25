@@ -54,8 +54,14 @@
                 <span class="font-medium block">
                   USB: {{ isConnected ? '✓ Verbunden' : 'Nicht verbunden' }}
                 </span>
-                <span v-if="isConnected" class="text-xs text-green-700">
-                  Bereit zum Flashen
+                <span v-if="isConnected && isFramoluxFirmware" class="text-xs text-green-700 block">
+                  ✓ Framolux Firmware {{ firmwareVersion }} erkannt
+                </span>
+                <span v-else-if="isConnected && !isFramoluxFirmware" class="text-xs text-orange-600 block">
+                  ⚠ Unbekannte Firmware - Bitte Framolux Firmware flashen
+                </span>
+                <span v-else-if="isConnected" class="text-xs text-gray-600 block">
+                  Warte auf Serial Output...
                 </span>
               </div>
             </div>
@@ -167,6 +173,8 @@ const {
   isFlashing,
   flashProgress,
   flashLog,
+  isFramoluxFirmware,
+  firmwareVersion,
   connect,
   disconnect,
   flashFirmware,

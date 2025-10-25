@@ -51,7 +51,15 @@ void configModeCallback(WiFiManager *myWiFiManager) {
  */
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n\nFramolux ESP8266 Starting...");
+  delay(100);
+  
+  // Firmware Identifier für Web Serial Detection
+  Serial.println("\n\n=== FRAMOLUX FIRMWARE ===");
+  Serial.println("Firmware: framolux");
+  Serial.println("Version: 2.0.0");
+  Serial.println("=========================\n");
+  
+  Serial.println("Framolux ESP8266 Starting...");
   
   // Speichere MAC-Adresse
   macAddress = WiFi.macAddress();
@@ -240,6 +248,8 @@ void handleStatus() {
  */
 void handleInfo() {
   StaticJsonDocument<400> doc;
+  doc["firmware"] = "framolux";  // Identifier für Framolux Firmware
+  doc["version"] = "2.0.0";
   doc["deviceId"] = deviceId;
   doc["deviceName"] = deviceName;
   doc["ip"] = WiFi.localIP().toString();
@@ -249,7 +259,7 @@ void handleInfo() {
   doc["chipId"] = ESP.getChipId();
   doc["flashSize"] = ESP.getFlashChipSize();
   doc["freeHeap"] = ESP.getFreeHeap();
-  doc["version"] = "2.0.0";
+  doc["frameCount"] = frameCount;
   
   String response;
   serializeJson(doc, response);

@@ -234,7 +234,10 @@ onUnmounted(() => {
               />
             </div>
           </template>
-          <ESP8266Setup @upload-frames="uploadFramesToESP" />
+          <ESP8266Setup 
+            :current-animation="currentAnimation"
+            @upload-frames="uploadFramesToESP" 
+          />
         </UCard>
       </template>
     </UModal>
