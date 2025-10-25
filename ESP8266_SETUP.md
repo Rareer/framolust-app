@@ -125,11 +125,27 @@ Die Web Serial API wird unterstützt von:
 ### Keine LEDs leuchten
 → Überprüfe die Verkabelung und stelle sicher, dass der LED_PIN im Arduino-Code korrekt ist
 
+## Matrix-Layout
+
+Die meisten NeoPixel-Matrizen sind in einem **Serpentinen-Muster (Zigzag)** verdrahtet:
+
+```
+Row 15 (Top):     →→→→→→→→→→→→→→→→  (LEDs 240-255, left to right)
+Row 14:           ←←←←←←←←←←←←←←←←  (LEDs 224-239, right to left)
+Row 13:           →→→→→→→→→→→→→→→→  (LEDs 208-223, left to right)
+...
+Row 1:            →→→→→→→→→→→→→→→→  (LEDs 16-31, left to right)
+Row 0 (Bottom):   →→→→→→→→→→→→→→→→  (LEDs 0-15, left to right)
+                  ↑ Start (bottom-left)
+```
+
+Der generierte Code berücksichtigt automatisch dieses Layout!
+
 ## Pinbelegung (Beispiel für NodeMCU)
 
 ```
 ESP8266 Pin → LED Matrix
-D4 (GPIO2) → DIN (Data In)
+D2 (GPIO4) → DIN (Data In)
 3.3V       → VCC (bei wenigen LEDs)
 GND        → GND
 

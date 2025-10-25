@@ -159,6 +159,11 @@ onUnmounted(() => {
             />
           </div>
         </div>
+
+        <!-- Arduino Code Generator -->
+        <div class="flex justify-center">
+          <ArduinoCodeGenerator :animation="currentAnimation" :pixels="pixels" />
+        </div>
       </div>
     </UContainer>
     
