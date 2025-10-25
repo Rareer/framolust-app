@@ -85,80 +85,39 @@ onUnmounted(() => {
     <UContainer class="py-8">
       <div class="space-y-8">
         <!-- Header -->
-        <div class="text-center space-y-2">
+        <div class="text-center">
           <h1 class="text-4xl font-bold text-gray-900 dark:text-white">
             LED Matrix Designer
           </h1>
-          <p class="text-gray-600 dark:text-gray-400">
-            Erstelle LED-Matrix-Animationen mit KI
-          </p>
         </div>
 
         <!-- API Key Configuration -->
         <ApiKeyInput />
 
-        <!-- Main Content Grid -->
-        <div class="grid lg:grid-cols-2 gap-8">
-          <!-- Left Column: AI Generator -->
-          <div class="space-y-6">
-            <AnimationPrompt @animation-generated="handleAnimationGenerated" />
-          </div>
-
-          <!-- Right Column: LED Matrix Display -->
-          <div class="space-y-6">
-            <UCard>
-              <template #header>
-                <div class="flex items-center justify-between">
-                  <h3 class="text-lg font-semibold">16x16 LED Matrix</h3>
-                  <div class="flex gap-2">
-                    <UButton
-                      v-if="currentAnimation"
-                      :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
-                      :color="isPlaying ? 'warning' : 'success'"
-                      variant="soft"
-                      @click="togglePlayPause"
-                      :title="isPlaying ? 'Pause' : 'Play'"
-                    />
-                    <UButton
-                      icon="i-heroicons-arrow-path"
-                      color="neutral"
-                      variant="ghost"
-                      @click="resetMatrix"
-                      title="Matrix zurücksetzen"
-                    />
-                  </div>
-                </div>
-              </template>
-
-              <div class="flex justify-center">
-                <LedMatrix :pixels="pixels" :size="20" />
-              </div>
-
-              <template #footer>
-                <div class="text-center text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <p>Pixel-Größe: 16x16</p>
-                  <p v-if="currentAnimation && isPlaying">
-                    Frame {{ currentFrameIndex + 1 }} / {{ currentAnimation.frames.length }}
-                  </p>
-                </div>
-              </template>
-            </UCard>
-          </div>
+        <!-- LED Matrix Display -->
+        <div class="flex justify-center">
+          <LedMatrix :pixels="pixels" :size="20" />
         </div>
 
-        <!-- Info Section -->
-        <UCard>
-          <div class="prose dark:prose-invert max-w-none">
-            <h3>Anleitung</h3>
-            <ol>
-              <li>Konfiguriere deinen OpenAI API Key (wird lokal gespeichert)</li>
-              <li>Beschreibe die gewünschte Animation im Textfeld</li>
-              <li>Klicke auf "Animation generieren" und warte auf das Ergebnis</li>
-              <li>Die Animation wird automatisch auf der LED-Matrix abgespielt</li>
-              <li>Nutze Play/Pause um die Animation zu steuern</li>
-            </ol>
-          </div>
-        </UCard>
+        <!-- Controls: Prompt Input + Animation Controls -->
+        <div class="flex items-center gap-2">
+          <AnimationPrompt @animation-generated="handleAnimationGenerated" class="flex-1" />
+          <UButton
+            v-if="currentAnimation"
+            :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+            :color="isPlaying ? 'warning' : 'success'"
+            variant="soft"
+            @click="togglePlayPause"
+            :title="isPlaying ? 'Pause' : 'Play'"
+          />
+          <UButton
+            icon="i-heroicons-arrow-path"
+            color="neutral"
+            variant="soft"
+            @click="resetMatrix"
+            title="Matrix zurücksetzen"
+          />
+        </div>
       </div>
     </UContainer>
   </div>

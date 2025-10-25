@@ -48,7 +48,7 @@ export const useOpenAI = () => {
           'Authorization': `Bearer ${apiKey.value}`
         },
         body: JSON.stringify({
-          model: 'gpt-4o-2024-08-06',
+          model: 'gpt-5',
           messages: [
             {
               role: 'system',
@@ -59,7 +59,7 @@ Erstelle mehrere Frames für eine flüssige Animation. Jedes Frame sollte eine a
 
 Wichtig:
 - Verwende lebendige, kontrastreiche Farben
-- Erstelle mindestens 5-10 Frames für eine flüssige Animation
+- Erstelle für Animationen mindestens 5-10 Frames; Falls keine Bewegung vorgesehen ist, erstelle nur ein einziges Frame mit dem gewünschten Motiv
 - Passe die Frame-Dauer an die gewünschte Geschwindigkeit an (typisch 50-200ms)
 - Für schwarze/ausgeschaltete LEDs verwende #000000`
             },
@@ -119,9 +119,7 @@ Wichtig:
                 additionalProperties: false
               }
             }
-          },
-          temperature: 0.7,
-          max_tokens: 16000
+          }
         })
       })
 
