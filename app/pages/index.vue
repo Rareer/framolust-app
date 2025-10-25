@@ -39,8 +39,14 @@ const resetMatrix = () => {
 }
 
 const handleAnimationGenerated = (animation: LEDAnimation) => {
+  // Stoppe alte Animation
+  stopAnimation()
+  
+  // Setze neue Animation
   currentAnimation.value = animation
   currentFrameIndex.value = 0
+  
+  // Starte neue Animation
   playAnimation()
 }
 
@@ -111,8 +117,10 @@ const uploadFramesToESP = async (deviceIp: string) => {
   }
 
   try {
-    // Sende Animation im richtigen Format (wie von OpenAI generiert)
-    const payload = {
+    const { compressAnimation } = useFrameCompression()
+    
+    // Konvertiere Animation zu Binär-Format
+    const animation = {
       description: currentAnimation.value.description || 'Custom Animation',
       loop: currentAnimation.value.loop !== false, // Default: true
       frames: currentAnimation.value.frames.map(frame => ({
@@ -120,21 +128,31 @@ const uploadFramesToESP = async (deviceIp: string) => {
         duration: frame.duration,
       }))
     }
+    
+    // Komprimiere zu Binär
+    const binaryData = compressAnimation(animation)
+    console.log(`📦 Uploading: ${binaryData.length} bytes (binary)`)
+    console.log(`📦 Frames: ${animation.frames.length}`)
+    
+    // Konvertiere zu Blob
+    const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
 
     const response = await fetch(`http://${deviceIp}/frames`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/octet-stream',
       },
-      body: JSON.stringify(payload),
+      body: blob,
     })
 
     if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`HTTP ${response.status}:`, errorText)
       throw new Error(`HTTP ${response.status}`)
     }
 
     const result = await response.json()
-    alert(`✓ Frames erfolgreich hochgeladen!\n${result.frameCount || payload.frames.length} Frames auf ESP8266 gespeichert.`)
+    alert(`✓ Frames erfolgreich hochgeladen!\n${result.frameCount || animation.frames.length} Frames auf ESP8266 gespeichert.`)
   } catch (error) {
     console.error('Upload failed:', error)
     alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')

@@ -31,7 +31,7 @@ export const useOpenAI = () => {
     }
   }
 
-  const generateAnimation = async (prompt: string): Promise<LEDAnimation | null> => {
+  const generateAnimation = async (prompt: string, referenceImage?: string[][] | null): Promise<LEDAnimation | null> => {
     if (!apiKey.value) {
       error.value = 'API Key fehlt'
       return null
@@ -61,11 +61,14 @@ Wichtig:
 - Verwende lebendige, kontrastreiche Farben
 - Erstelle für Animationen mindestens 5-10 Frames; Falls keine Bewegung vorgesehen ist, erstelle nur ein einziges Frame mit dem gewünschten Motiv
 - Passe die Frame-Dauer an die gewünschte Geschwindigkeit an (typisch 50-200ms)
-- Für schwarze/ausgeschaltete LEDs verwende #000000`
+- Für schwarze/ausgeschaltete LEDs verwende #000000
+- Wenn ein Referenzbild bereitgestellt wird, verwende es als Basis und modifiziere es entsprechend dem Prompt`
             },
             {
               role: 'user',
-              content: prompt
+              content: referenceImage 
+                ? `${prompt}\n\nReferenzbild (16x16 Pixel-Matrix):\n${JSON.stringify(referenceImage)}`
+                : prompt
             }
           ],
           response_format: {

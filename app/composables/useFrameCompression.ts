@@ -17,6 +17,31 @@ export interface Animation {
 export const useFrameCompression = () => {
   
   /**
+   * Rotiere Pixel-Matrix um 180°
+   * Korrigiert die Orientierung für das physische LED-Panel
+   */
+  const rotateMatrix180 = (matrix: string[][]): string[][] => {
+    const height = matrix.length
+    const width = matrix[0]?.length || 0
+    
+    // Erstelle neue Matrix mit gleichen Dimensionen
+    const rotated: string[][] = Array(height).fill(null).map(() => Array(width).fill('#000000'))
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // 180° Rotation: (x, y) -> (width - 1 - x, height - 1 - y)
+        const pixel = matrix[y]?.[x] || '#000000'
+        const targetRow = rotated[height - 1 - y]
+        if (targetRow) {
+          targetRow[width - 1 - x] = pixel
+        }
+      }
+    }
+    
+    return rotated
+  }
+  
+  /**
    * Konvertiere Hex-Farbe zu RGB-Bytes
    */
   const hexToRGB = (hex: string): [number, number, number] => {
@@ -40,8 +65,11 @@ export const useFrameCompression = () => {
    *   - R, G, B (je 1 Byte)
    */
   const compressFrame = (frame: PixelFrame): Uint8Array => {
-    const width = frame.pixels[0]?.length || 16
-    const height = frame.pixels.length || 16
+    // Rotiere die Pixel-Matrix um 180° für korrekte Orientierung
+    const rotatedPixels = rotateMatrix180(frame.pixels)
+    
+    const width = rotatedPixels[0]?.length || 16
+    const height = rotatedPixels.length || 16
     
     // Header: 8 Bytes
     const header = new Uint8Array(8)
@@ -57,7 +85,7 @@ export const useFrameCompression = () => {
     
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const hex = frame.pixels[y]?.[x] || '#000000'
+        const hex = rotatedPixels[y]?.[x] || '#000000'
         const [r, g, b] = hexToRGB(hex)
         
         pixels[offset++] = r

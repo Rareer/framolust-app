@@ -30,6 +30,32 @@ const isScanning = ref(false)
 const isUploading = ref(false)
 const uploadProgress = ref(0)
 
+// Lade gespeichertes Gerät beim Start
+if (process.client) {
+  const savedDevice = localStorage.getItem('framolux_selected_device')
+  if (savedDevice) {
+    try {
+      selectedDevice.value = JSON.parse(savedDevice)
+      console.log('📱 Restored selected device from localStorage:', selectedDevice.value)
+    } catch (e) {
+      console.error('Failed to restore selected device:', e)
+    }
+  }
+}
+
+// Speichere selectedDevice automatisch
+if (process.client) {
+  watch(selectedDevice, (newDevice) => {
+    if (newDevice) {
+      localStorage.setItem('framolux_selected_device', JSON.stringify(newDevice))
+      console.log('💾 Saved selected device to localStorage:', newDevice)
+    } else {
+      localStorage.removeItem('framolux_selected_device')
+      console.log('🗑️ Removed selected device from localStorage')
+    }
+  }, { deep: true })
+}
+
 export const useESP8266 = () => {
 
   /**

@@ -18,13 +18,8 @@ const imageDescription = ref<string>('')
 const handleGenerate = async () => {
   if (!prompt.value.trim()) return
   
-  // Combine prompt with image description if available
-  let fullPrompt = prompt.value
-  if (imageDescription.value) {
-    fullPrompt = `${prompt.value}\n\nReference image: ${imageDescription.value}`
-  }
-  
-  const animation = await generateAnimation(fullPrompt)
+  // Sende Pixel-Matrix direkt an die KI
+  const animation = await generateAnimation(prompt.value, uploadedImageMatrix.value)
   
   if (animation) {
     emit('animation-generated', animation)
