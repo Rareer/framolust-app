@@ -19,29 +19,9 @@
         </p>
       </div>
 
-      <!-- Step 1: Device ID (optional) -->
+      <!-- Step 1: Connect & Flash -->
       <div class="setup-step">
-        <h3 class="text-xl font-semibold mb-4">1. Device-ID (optional)</h3>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium mb-2">Custom Device-ID</label>
-            <input
-              v-model="customDeviceId"
-              type="text"
-              placeholder="Leer lassen für automatische ID (z.B. FLX123456)"
-              class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              :disabled="isFlashing"
-            />
-            <p class="text-xs text-gray-500 mt-1">
-              Wird aus MAC-Adresse generiert, wenn leer. Nützlich für mehrere Geräte.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 2: Connect & Flash -->
-      <div class="setup-step">
-        <h3 class="text-xl font-semibold mb-4">2. ESP8266 per USB verbinden & flashen</h3>
+        <h3 class="text-xl font-semibold mb-4">1. ESP8266 per USB verbinden & flashen</h3>
         <div class="space-y-4">
           <!-- Connection Status -->
           <div class="p-4 rounded-lg" :class="isConnected ? 'bg-green-50 border border-green-200' : 'bg-gray-100'">
@@ -176,13 +156,14 @@
           <div class="space-y-2 text-sm text-green-700">
             <p><strong>Nächste Schritte:</strong></p>
             <ol class="list-decimal list-inside space-y-1 ml-2">
-              <li>Suche nach WiFi-Netzwerk <code class="bg-green-100 px-2 py-1 rounded">Framolux-XXXXXX</code></li>
+              <li>Suche nach WiFi-Netzwerk <code class="bg-green-100 px-2 py-1 rounded">Framolux-XXXXXX</code> (siehe Serial Monitor oben für genauen Namen)</li>
               <li>Verbinde mit diesem Netzwerk (Passwort: <code class="bg-green-100 px-2 py-1 rounded">framolux123</code>)</li>
-              <li>Browser öffnet automatisch Konfigurationsseite</li>
+              <li>Browser öffnet automatisch Konfigurationsseite (oder manuell: <code class="bg-green-100 px-2 py-1 rounded">http://192.168.4.1</code>)</li>
               <li>Wähle dein WLAN aus und gib Passwort ein</li>
-              <li>Optional: Gib einen Device-Namen ein</li>
+              <li><strong>Wichtig:</strong> Gib einen benutzerdefinierten Namen ein (z.B. "Wohnzimmer", "Kueche") - nur Buchstaben und Zahlen!</li>
               <li>Klicke auf "Save" - Gerät verbindet sich mit deinem WLAN</li>
-              <li>Notiere die IP-Adresse aus dem Serial Monitor</li>
+              <li>Beim nächsten Neustart heißt das WiFi dann: <code class="bg-green-100 px-2 py-1 rounded">Framolux-DeinName-XXXX</code></li>
+              <li>Notiere die IP-Adresse aus dem Serial Monitor für die Verbindung</li>
             </ol>
           </div>
         </div>
@@ -206,7 +187,6 @@ const {
   clearLog,
 } = useWebSerial()
 
-const customDeviceId = ref('')
 const flashComplete = ref(false)
 const logContainer = ref<HTMLElement | null>(null)
 
@@ -274,7 +254,7 @@ const startFlash = async () => {
     // Diese muss im public/ Ordner liegen
     const firmwareUrl = '/firmware/framolux-esp8266.bin'
     
-    await flashFirmware(firmwareUrl, customDeviceId.value)
+    await flashFirmware(firmwareUrl, '')
     
     flashComplete.value = true
   } catch (error) {

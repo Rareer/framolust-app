@@ -104,11 +104,16 @@ void setup() {
   WiFi.mode(WIFI_AP_STA);
   
   // Custom Parameter für Device-Name
-  WiFiManagerParameter custom_device_name("device_name", "Device Name", deviceName.c_str(), 32);
+  WiFiManagerParameter custom_device_name("device_name", "Device Name (optional)", deviceName.c_str(), 32);
   wifiManager.addParameter(&custom_device_name);
   
-  // AP Name mit Device-ID
-  String apName = "Framolux-" + deviceId;
+  // AP Name: Verwende Custom-Name falls gesetzt, sonst Device-ID
+  String apName;
+  if (deviceName.length() > 0 && deviceName != DEFAULT_DEVICE_NAME) {
+    apName = "Framolux-" + deviceName + "-" + deviceId.substring(deviceId.length() - 4);
+  } else {
+    apName = "Framolux-" + deviceId;
+  }
   
   Serial.println("\n=== WiFi Manager Starting ===");
   Serial.println("AP Name: " + apName);
