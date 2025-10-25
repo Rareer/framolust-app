@@ -96,12 +96,21 @@ void setup() {
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setSaveConfigCallback(saveWiFiConfig);
   
+  // Setze Timeout und Debug-Modus
+  wifiManager.setConfigPortalTimeout(180); // 3 Minuten
+  wifiManager.setDebugOutput(true);
+  
   // Custom Parameter für Device-Name
   WiFiManagerParameter custom_device_name("device_name", "Device Name", deviceName.c_str(), 32);
   wifiManager.addParameter(&custom_device_name);
   
   // AP Name mit Device-ID
   String apName = "Framolux-" + deviceId;
+  
+  Serial.println("Starting WiFi Manager...");
+  Serial.println("AP Name: " + apName);
+  Serial.println("AP Password: framolux123");
+  Serial.println("AP Channel: 1 (2.4 GHz)");
   
   // Versuche zu verbinden, oder starte Config Portal
   if (!wifiManager.autoConnect(apName.c_str(), "framolux123")) {

@@ -68,7 +68,7 @@
           </div>
 
           <!-- Action Buttons -->
-          <div class="flex gap-4">
+          <div class="flex gap-4 flex-wrap">
             <button
               v-if="!isConnected"
               @click="connectDevice"
@@ -89,11 +89,18 @@
             <button
               v-if="isConnected"
               @click="disconnectDevice"
-              :disabled="isFlashing"
-              class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400"
+              class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
             >
               Trennen
             </button>
+          </div>
+
+          <!-- Info: Serial Monitor -->
+          <div v-if="isConnected && isFramoluxFirmware" class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p class="text-sm text-blue-800">
+              <strong>💡 Serial Monitor aktiv:</strong> Du siehst alle Ausgaben des ESP8266 im Log unten. 
+              Hier findest du die WiFi AP-Informationen und später die IP-Adresse.
+            </p>
           </div>
 
           <!-- Flash Progress -->
@@ -126,18 +133,27 @@
 
       <!-- Step 3: Log Output -->
       <div v-if="flashLog.length > 0" class="setup-step">
-        <h3 class="text-xl font-semibold mb-4">3. Flash-Log</h3>
-        <div class="bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-64 overflow-y-auto">
-          <div v-for="(line, index) in flashLog" :key="index">
+        <h3 class="text-xl font-semibold mb-4">3. Flash-Log & Serial Monitor</h3>
+        <div class="bg-black text-green-400 p-4 rounded-lg font-mono text-sm h-96 overflow-y-auto" ref="logContainer">
+          <div v-for="(line, index) in flashLog" :key="index" :class="getLogLineClass(line)">
             {{ line }}
           </div>
         </div>
-        <button
-          @click="clearLog"
-          class="mt-2 px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm"
-        >
-          Log löschen
-        </button>
+        <div class="mt-2 flex gap-2">
+          <button
+            @click="clearLog"
+            class="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 text-sm"
+          >
+            Log löschen
+          </button>
+          <button
+            v-if="isConnected && isFramoluxFirmware"
+            @click="scrollToBottom"
+            class="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800 text-sm"
+          >
+            ⬇ Zum Ende scrollen
+          </button>
+        </div>
       </div>
 
       <!-- Step 4: After Flash -->
@@ -183,6 +199,7 @@ const {
 
 const customDeviceId = ref('')
 const flashComplete = ref(false)
+const logContainer = ref<HTMLElement | null>(null)
 
 const connectDevice = async () => {
   try {
@@ -191,6 +208,38 @@ const connectDevice = async () => {
     alert('Verbindung fehlgeschlagen! Bitte prüfe die USB-Verbindung.')
   }
 }
+
+// Highlight wichtige Log-Zeilen
+const getLogLineClass = (line: string) => {
+  if (line.includes('✓') || line.includes('success')) {
+    return 'text-green-400 font-semibold'
+  }
+  if (line.includes('✗') || line.includes('error') || line.includes('failed')) {
+    return 'text-red-400 font-semibold'
+  }
+  if (line.includes('AP SSID:') || line.includes('IP address:') || line.includes('WiFi connected')) {
+    return 'text-yellow-300 font-bold'
+  }
+  if (line.includes('[Serial]')) {
+    return 'text-cyan-400'
+  }
+  if (line.includes('===')) {
+    return 'text-blue-400 font-semibold'
+  }
+  return 'text-green-400'
+}
+
+// Scrolle zum Ende des Logs
+const scrollToBottom = () => {
+  if (logContainer.value) {
+    logContainer.value.scrollTop = logContainer.value.scrollHeight
+  }
+}
+
+// Auto-scroll wenn neue Log-Einträge kommen
+watch(() => flashLog.value.length, () => {
+  nextTick(() => scrollToBottom())
+})
 
 const disconnectDevice = async () => {
   await disconnect()

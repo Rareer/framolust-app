@@ -362,9 +362,27 @@ export const useWebSerial = () => {
       addLog('3. Configure your WiFi credentials')
       addLog('4. Device will connect to your network')
       
-      // Trenne nach erfolgreichem Flash
-      addLog('Disconnecting...')
-      await disconnect()
+      // Flash erfolgreich - starte Serial Monitor
+      addLog('\n=================================')
+      addLog('Starting Serial Monitor...')
+      addLog('Watching ESP8266 boot output...')
+      addLog('=================================\n')
+      
+      // Warte kurz bis ESP8266 neu startet
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Öffne Port neu für Serial Monitor
+      try {
+        await port.open({ baudRate: 115200 })
+        isConnected.value = true
+        
+        // Starte Serial Reader
+        readSerialOutput()
+        
+        addLog('✓ Serial Monitor active - watching boot output...')
+      } catch (error) {
+        addLog('⚠ Could not start Serial Monitor (port may be busy)')
+      }
       
       return true
     } catch (error) {
