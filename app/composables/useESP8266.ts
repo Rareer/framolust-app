@@ -23,34 +23,82 @@ export interface WiFiConfig {
   password: string
 }
 
+// Global state (shared across all component instances)
+const devices = ref<ESP8266Device[]>([])
+const selectedDevice = ref<ESP8266Device | null>(null)
+const isScanning = ref(false)
+const isUploading = ref(false)
+const uploadProgress = ref(0)
+
 export const useESP8266 = () => {
-  const devices = ref<ESP8266Device[]>([])
-  const selectedDevice = ref<ESP8266Device | null>(null)
-  const isScanning = ref(false)
-  const isUploading = ref(false)
-  const uploadProgress = ref(0)
 
   /**
    * Scanne nach ESP8266 Geräten im lokalen Netzwerk
-   * Verwendet IP-Range Scan über Backend
+   * Client-seitiger IP-Range Scan (funktioniert nur im Browser!)
    */
   const scanForDevices = async (subnet?: string) => {
     isScanning.value = true
     devices.value = []
 
     try {
-      console.log('Starting device scan...')
+      const scanSubnet = subnet || '192.168.1' // Default subnet
+      console.log(`Starting device scan on ${scanSubnet}.x...`)
       
-      // IP-Range Scan über Backend
-      const response = await $fetch<{ success: boolean, devices: ESP8266Device[], subnet: string }>('/api/esp8266/discover', {
-        method: 'GET',
-        query: subnet ? { subnet } : {},
-      })
-
-      console.log(`Scan complete. Found ${response.devices.length} devices.`)
-      devices.value = response.devices
+      const foundDevices: ESP8266Device[] = []
+      const scanPromises: Promise<void>[] = []
       
-      return response.devices
+      // Scanne IP-Range (1-254)
+      for (let i = 1; i <= 254; i++) {
+        const ip = `${scanSubnet}.${i}`
+        
+        const scanPromise = (async () => {
+          try {
+            // Timeout für jeden Request
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 1500) // 1.5s timeout
+            
+            const response = await fetch(`http://${ip}/api/info`, {
+              signal: controller.signal,
+              mode: 'cors',
+            })
+            
+            clearTimeout(timeoutId)
+            
+            if (response.ok) {
+              const data = await response.json()
+              
+              // Prüfe ob es ein Framolux-Gerät ist
+              if (data.firmware === 'framolux' || data.deviceId?.startsWith('FLX')) {
+                console.log(`✓ Found Framolux device at ${ip}:`, data)
+                foundDevices.push({
+                  ip,
+                  deviceId: data.deviceId,
+                  deviceName: data.deviceName || 'Unnamed',
+                  firmware: data.firmware,
+                  version: data.version,
+                  ssid: data.ssid,
+                  mac: data.mac || '',
+                  rssi: data.rssi || 0,
+                  frameCount: data.frameCount || 0,
+                  status: 'online',
+                })
+              }
+            }
+          } catch (error) {
+            // Ignore - device not found or timeout
+          }
+        })()
+        
+        scanPromises.push(scanPromise)
+      }
+      
+      // Warte auf alle Scans
+      await Promise.all(scanPromises)
+      
+      console.log(`✓ Scan complete. Found ${foundDevices.length} Framolux device(s).`)
+      devices.value = foundDevices
+      
+      return foundDevices
     } catch (error) {
       console.error('Device scan failed:', error)
       return []
@@ -143,47 +191,70 @@ export const useESP8266 = () => {
   }
 
   /**
-   * Lade Frames auf ESP8266 hoch
+   * Lade Frames auf ESP8266 hoch (Binär-Format)
    */
   const uploadFramesToDevice = async (
     deviceIp: string,
-    frames: Array<{ duration: number; leds: string[] }>
+    frames: Array<{ duration: number; pixels: string[][] }>
   ) => {
     isUploading.value = true
     uploadProgress.value = 0
 
     try {
-      const payload = {
-        frames,
-        totalFrames: frames.length,
-        timestamp: Date.now(),
-      }
-
-      // Simuliere Upload-Progress (da $fetch kein onUploadProgress unterstützt)
-      const payloadSize = JSON.stringify(payload).length
-      const chunks = Math.ceil(payloadSize / 10000) // Simuliere Chunks
+      const { compressAnimation, calculateCompressionStats } = useFrameCompression()
       
+      // Konvertiere zu Animation-Format
+      const animation = {
+        description: 'Framolux Animation',
+        loop: true,
+        frames: frames.map(f => ({
+          pixels: f.pixels,
+          duration: f.duration
+        }))
+      }
+      
+      // Komprimiere zu Binär-Format
+      const binaryData = compressAnimation(animation)
+      
+      // Zeige Kompressionsstatistiken
+      const stats = calculateCompressionStats(animation)
+      console.log(`📦 Compression: ${stats.jsonSize} → ${stats.binarySize} bytes (${stats.savings}% saved)`)
+      console.log(`📦 Binary data type:`, binaryData.constructor.name)
+      console.log(`📦 First 16 bytes:`, Array.from(binaryData.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '))
+      
+      // Simuliere Upload-Progress
       const progressInterval = setInterval(() => {
         if (uploadProgress.value < 90) {
-          uploadProgress.value += Math.floor(90 / chunks)
+          uploadProgress.value += 10
         }
       }, 100)
 
-      const response = await $fetch<{
+      // WICHTIG: Verwende fetch statt $fetch für binäre Daten
+      // Konvertiere Uint8Array zu Blob für fetch
+      const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
+      
+      const fetchResponse = await fetch(`http://${deviceIp}/frames`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        body: blob,
+      })
+      
+      if (!fetchResponse.ok) {
+        throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
+      }
+      
+      const response = await fetchResponse.json() as {
         success: boolean
         frameCount: number
         message: string
-      }>(`http://${deviceIp}/frames`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
+      }
 
       clearInterval(progressInterval)
 
       uploadProgress.value = 100
+      console.log(`✓ Upload successful: ${response.frameCount} frames`)
       return response
     } catch (error) {
       console.error('Failed to upload frames:', error)
@@ -352,10 +423,12 @@ export const useESP8266 = () => {
   }
 
   /**
-   * Sende Test-Frame an Gerät
+   * Sende Test-Frame an Gerät (Binär-Format)
    */
   const sendTestFrame = async (ip: string) => {
     try {
+      const { compressAnimation } = useFrameCompression()
+      
       // Erstelle einfachen Test-Frame (16x16 Pixel-Array)
       // Zeige ein grünes Kreuz auf schwarzem Hintergrund
       const pixels: string[][] = []
@@ -372,20 +445,42 @@ export const useESP8266 = () => {
         pixels.push(row)
       }
 
-      const testFrame = {
-        pixels,
-        duration: 3000,
+      const animation = {
+        description: 'Test Animation',
+        loop: true,
+        frames: [{
+          pixels,
+          duration: 3000,
+        }],
       }
 
-      const response = await $fetch(`http://${ip}/frames`, {
-        method: 'POST',
-        body: {
-          description: 'Test Animation',
-          loop: true,
-          frames: [testFrame],
-        },
-      })
+      // Komprimiere zu Binär-Format
+      const binaryData = compressAnimation(animation)
+      console.log(`📦 Test frame: ${binaryData.length} bytes (binary)`)
+      console.log(`📦 Binary data type:`, binaryData.constructor.name)
+      console.log(`📦 First 16 bytes:`, Array.from(binaryData.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '))
 
+      // WICHTIG: Verwende fetch statt $fetch für binäre Daten
+      // Konvertiere Uint8Array zu Blob für fetch
+      const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
+      
+      const fetchResponse = await fetch(`http://${ip}/frames`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        body: blob,
+      })
+      
+      if (!fetchResponse.ok) {
+        const errorText = await fetchResponse.text()
+        console.error(`HTTP ${fetchResponse.status}:`, errorText)
+        throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
+      }
+      
+      const response = await fetchResponse.json()
+
+      console.log('✓ Test frame uploaded:', response)
       return { success: true, response }
     } catch (error) {
       console.error('Test frame failed:', error)

@@ -9,6 +9,23 @@
     <div class="setup-step mb-8">
       <h3 class="text-xl font-semibold mb-4">Gerät im Netzwerk finden</h3>
       <div class="space-y-4">
+        <!-- Subnet Eingabe -->
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <label class="block text-sm font-medium mb-2">Netzwerk-Bereich (Subnet)</label>
+          <div class="flex gap-2 items-center">
+            <input
+              v-model="scanSubnet"
+              type="text"
+              placeholder="192.168.178"
+              class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+            />
+            <span class="text-gray-500">.1-254</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">
+            Standard: 192.168.1 oder 192.168.178 (Fritzbox)
+          </p>
+        </div>
+        
         <div class="flex gap-4">
           <button
             @click="scanDevices"
@@ -70,6 +87,12 @@
                   {{ device.status }}
                 </span>
                 <p class="text-sm text-gray-600">{{ device.frameCount }} Frames</p>
+                <button
+                  @click.stop="sendTestFrame(device.ip)"
+                  class="text-xs px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+                >
+                  🧪 Test Frame
+                </button>
                 <button
                   @click.stop="startRename(device)"
                   class="text-xs text-blue-600 hover:text-blue-800"
@@ -165,6 +188,7 @@ const {
 
 const showManualConnect = ref(false)
 const manualIp = ref('')
+const scanSubnet = ref('192.168.178') // Default für Fritzbox
 
 // Prüfe ob Frames zum Upload bereit sind
 const hasPendingFrames = computed(() => {
@@ -177,16 +201,24 @@ onMounted(() => {
 })
 
 const scanDevices = async () => {
-  await scanForDevices()
+  console.log('Scanning subnet:', scanSubnet.value)
+  await scanForDevices(scanSubnet.value)
 }
 
 const connectManually = async () => {
   if (!manualIp.value) return
+  
+  console.log('Connecting to device at:', manualIp.value)
   const device = await connectToDevice(manualIp.value)
+  
   if (device) {
-    alert(`Verbunden mit ${device.deviceName}!`)
+    console.log('✓ Connected to device:', device)
+    console.log('✓ selectedDevice is now:', selectedDevice.value)
+    alert(`✓ Verbunden mit ${device.deviceName} (${device.ip})!`)
+    showManualConnect.value = false // Schließe Eingabefeld
   } else {
-    alert('Verbindung fehlgeschlagen. Prüfe die IP-Adresse.')
+    console.error('✗ Connection failed')
+    alert('❌ Verbindung fehlgeschlagen. Prüfe die IP-Adresse.')
   }
 }
 
@@ -217,6 +249,74 @@ const clearFrames = async () => {
     await connectToDevice(selectedDevice.value.ip)
   } catch (error) {
     alert('Fehler beim Löschen der Frames')
+  }
+}
+
+const sendTestFrame = async (ip: string) => {
+  try {
+    console.log('Sending test frame to:', ip)
+    
+    const { compressAnimation } = useFrameCompression()
+    
+    // Erstelle 16x16 Matrix mit 4 farbigen Ecken
+    const pixels: string[][] = []
+    for (let y = 0; y < 16; y++) {
+      const row: string[] = []
+      for (let x = 0; x < 16; x++) {
+        if (y === 0 && x === 0) {
+          row.push('#FFFF00') // Links oben: Gelb
+        } else if (y === 0 && x === 15) {
+          row.push('#0000FF') // Rechts oben: Blau
+        } else if (y === 15 && x === 0) {
+          row.push('#00FF00') // Links unten: Grün
+        } else if (y === 15 && x === 15) {
+          row.push('#FF0000') // Rechts unten: Rot
+        } else {
+          row.push('#000000') // Rest: Schwarz
+        }
+      }
+      pixels.push(row)
+    }
+    
+    const animation = {
+      description: 'Test Frame - 4 Ecken',
+      loop: false,
+      frames: [
+        {
+          pixels,
+          duration: 5000, // 5 Sekunden
+        }
+      ]
+    }
+    
+    // Komprimiere zu Binär-Format
+    const binaryData = compressAnimation(animation)
+    console.log(`📦 Test frame: ${binaryData.length} bytes (binary)`)
+    console.log(`📦 First 16 bytes:`, Array.from(binaryData.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '))
+    
+    // Konvertiere zu Blob
+    const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
+    
+    const response = await fetch(`http://${ip}/frames`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      body: blob,
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`HTTP ${response.status}:`, errorText)
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
+    const result = await response.json()
+    console.log('✓ Test frame sent:', result)
+    alert('✓ Test Frame gesendet!\n\nDu solltest jetzt sehen:\n🟡 Gelb (links oben)\n🔵 Blau (rechts oben)\n🟢 Grün (links unten)\n🔴 Rot (rechts unten)')
+  } catch (error) {
+    console.error('✗ Test frame failed:', error)
+    alert('❌ Test Frame fehlgeschlagen!')
   }
 }
 </script>

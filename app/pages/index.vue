@@ -11,6 +11,11 @@ const { uploadFramesToDevice, selectedDevice } = useESP8266()
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
 
+// Debug: Watch selectedDevice changes
+watch(selectedDevice, (newDevice) => {
+  console.log('🔄 selectedDevice changed:', newDevice)
+}, { deep: true })
+
 // Initialize with empty/dark pixels
 const pixels = ref<string[][]>(
   Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
@@ -106,16 +111,33 @@ const uploadFramesToESP = async (deviceIp: string) => {
   }
 
   try {
-    const frames = currentAnimation.value.frames.map(frame => ({
-      duration: frame.duration,
-      leds: frame.pixels.flat(), // Flatten 2D array to 1D
-    }))
+    // Sende Animation im richtigen Format (wie von OpenAI generiert)
+    const payload = {
+      description: currentAnimation.value.description || 'Custom Animation',
+      loop: currentAnimation.value.loop !== false, // Default: true
+      frames: currentAnimation.value.frames.map(frame => ({
+        pixels: frame.pixels, // 16x16 Array von Hex-Farben
+        duration: frame.duration,
+      }))
+    }
 
-    await uploadFramesToDevice(deviceIp, frames)
-    alert('Frames erfolgreich hochgeladen!')
+    const response = await fetch(`http://${deviceIp}/frames`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+    alert(`✓ Frames erfolgreich hochgeladen!\n${result.frameCount || payload.frames.length} Frames auf ESP8266 gespeichert.`)
   } catch (error) {
     console.error('Upload failed:', error)
-    alert('Upload fehlgeschlagen!')
+    alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
   }
 }
 
@@ -177,7 +199,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Controls: Prompt Input + Animation Controls -->
-        <div class="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 border border-gray-800/50 shadow-xl">
+        <div class="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 border border-gray-800/50 shadow-xl space-y-3">
           <div class="flex items-center gap-3">
             <AnimationPrompt @animation-generated="handleAnimationGenerated" class="flex-1" />
             <UButton
@@ -196,6 +218,33 @@ onUnmounted(() => {
               size="lg"
               @click="resetMatrix"
               title="Matrix zurücksetzen"
+            />
+          </div>
+          
+          <!-- Send to ESP8266 Button -->
+          <div v-if="currentAnimation && selectedDevice" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
+            <div class="flex-1 text-sm text-gray-400">
+              <span class="font-medium text-green-400">{{ selectedDevice.deviceName }}</span> bereit
+            </div>
+            <UButton
+              icon="i-heroicons-arrow-up-tray"
+              color="success"
+              size="lg"
+              @click="uploadFramesToESP(selectedDevice.ip)"
+              label="An ESP8266 senden"
+            />
+          </div>
+          <div v-else-if="currentAnimation && !selectedDevice" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
+            <div class="flex-1 text-sm text-gray-400">
+              Kein ESP8266 verbunden
+            </div>
+            <UButton
+              icon="i-heroicons-cpu-chip"
+              color="neutral"
+              variant="soft"
+              size="lg"
+              @click="isESP8266SetupOpen = true"
+              label="ESP8266 einrichten"
             />
           </div>
         </div>

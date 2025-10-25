@@ -127,8 +127,25 @@ void connectWiFi() {
  * Webserver Routes konfigurieren
  */
 void setupRoutes() {
-  // CORS Headers für alle Requests
-  server.enableCORS(true);
+  // WICHTIG: enableCORS(true) NICHT verwenden - führt zu doppelten Headers!
+  // Wir setzen CORS-Header manuell in jedem Handler
+  
+  // OPTIONS Handler für CORS Preflight Requests
+  server.on("/frames", HTTP_OPTIONS, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204);
+  });
+  
+  server.on("/config", HTTP_OPTIONS, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "PUT, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204);
+  });
   
   // GET / - Status Info
   server.on("/", HTTP_GET, handleRoot);
@@ -184,6 +201,8 @@ void handleRoot() {
  * Handler: Status
  */
 void handleStatus() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   StaticJsonDocument<256> doc;
   doc["status"] = "online";
   doc["deviceId"] = deviceId;
@@ -202,6 +221,8 @@ void handleStatus() {
  * Handler: Device Info
  */
 void handleInfo() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   StaticJsonDocument<400> doc;
   doc["deviceId"] = deviceId;
   doc["deviceName"] = deviceName;
@@ -223,6 +244,11 @@ void handleInfo() {
  * Handler: Upload Frames
  */
 void handleUploadFrames() {
+  // CORS Headers explizit setzen
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"No data received\"}");
     return;
@@ -264,6 +290,8 @@ void handleUploadFrames() {
  * Handler: Get Frames
  */
 void handleGetFrames() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   File file = LittleFS.open(FRAME_FILE, "r");
   if (!file) {
     server.send(404, "application/json", "{\"error\":\"No frames stored\"}");
@@ -280,6 +308,8 @@ void handleGetFrames() {
  * Handler: Clear Frames
  */
 void handleClearFrames() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   if (LittleFS.remove(FRAME_FILE)) {
     frameCount = 0;
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Frames cleared\"}");
@@ -293,6 +323,8 @@ void handleClearFrames() {
  * Handler: Update Config (Device Name ändern)
  */
 void handleUpdateConfig() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"No data received\"}");
     return;

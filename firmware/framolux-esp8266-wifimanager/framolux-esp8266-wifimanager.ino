@@ -54,11 +54,28 @@ CRGB leds[NUM_LEDS];
 int currentFrameIndex = -1;
 unsigned long frameStartTime = 0;
 
-// Frame Struktur (für OpenAI generierte Pixel-Frames)
+// Frame Strukturen
 struct Frame {
   int duration;  // Frame-Dauer in Millisekunden
   // pixels wird direkt aus JSON gelesen (16x16 Array von Hex-Farben)
 };
+
+// Binäres Frame-Format
+struct FrameHeader {
+  uint32_t duration;
+  uint8_t width;
+  uint8_t height;
+  uint16_t reserved;
+} __attribute__((packed));
+
+// Binäres Animation-Format
+struct AnimationHeader {
+  char magic[4];      // "FMLX"
+  uint16_t version;
+  uint16_t frameCount;
+  uint8_t loop;
+  uint8_t reserved[7];
+} __attribute__((packed));
 
 // WiFi Manager Callback
 void configModeCallback(WiFiManager *myWiFiManager) {
@@ -150,6 +167,12 @@ void setup() {
     apName = "Framolux-" + deviceId;
   }
   
+  // WICHTIG: Setze Hostname BEVOR WiFi Manager startet
+  String hostname = "framolux-" + deviceId;
+  hostname.toLowerCase();
+  WiFi.hostname(hostname);
+  Serial.println("WiFi Hostname set to: " + hostname);
+  
   Serial.println("\n=== WiFi Manager Starting ===");
   Serial.println("AP Name: " + apName);
   Serial.println("AP Password: framolux123");
@@ -164,16 +187,16 @@ void setup() {
     ESP.restart();
   }
   
-  // WiFi verbunden!
-  Serial.println("\nWiFi connected!");
-  Serial.println("IP address: " + WiFi.localIP().toString());
-  
   // Device-Name aus WiFi Manager Parameter übernehmen
   String newDeviceName = custom_device_name.getValue();
   if (newDeviceName.length() > 0 && newDeviceName != deviceName) {
     deviceName = newDeviceName;
     saveConfig();
   }
+  
+  // WiFi verbunden!
+  Serial.println("\nWiFi connected!");
+  Serial.println("IP address: " + WiFi.localIP().toString());
   
   // mDNS starten mit Device-ID als Hostname
   String mdnsName = "framolux-" + deviceId;
@@ -200,191 +223,64 @@ void setup() {
   Serial.println("=================================\n");
 }
 
+
+
+
 /**
- * Verarbeite Serial Commands für Konfiguration
+ * Lade und zeige Frame aus binärem Format
  */
-void handleSerialCommands() {
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    
-    if (command.startsWith("SET_WIFI:")) {
-      // Format: SET_WIFI:SSID:PASSWORD
-      int firstColon = command.indexOf(':', 9);
-      int secondColon = command.indexOf(':', firstColon + 1);
-      
-      if (firstColon > 0 && secondColon > 0) {
-        String ssid = command.substring(9, firstColon);
-        String password = command.substring(firstColon + 1, secondColon);
-        
-        Serial.println("Configuring WiFi via Serial...");
-        Serial.println("SSID: " + ssid);
-        
-        // Speichere Config
-        WiFi.begin(ssid.c_str(), password.c_str());
-        
-        // Warte auf Verbindung
-        int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-          delay(500);
-          Serial.print(".");
-          attempts++;
-        }
-        
-        if (WiFi.status() == WL_CONNECTED) {
-          Serial.println("\nWiFi connected via Serial!");
-          Serial.println("IP: " + WiFi.localIP().toString());
-          saveConfig(); // Speichere für nächsten Boot
-        } else {
-          Serial.println("\nWiFi connection failed!");
-        }
-      }
-    }
-    else if (command.startsWith("SET_NAME:")) {
-      // Format: SET_NAME:DeviceName
-      String name = command.substring(9);
-      deviceName = name;
-      saveConfig();
-      Serial.println("Device name set to: " + deviceName);
-    }
-    else if (command.startsWith("SET_APIKEY:")) {
-      // Format: SET_APIKEY:sk-proj-xxxxx
-      String apiKey = command.substring(11);
-      apiKey.trim();
-      
-      if (apiKey.length() > 0) {
-        // Speichere API Key in LittleFS
-        File file = LittleFS.open("/apikey.txt", "w");
-        if (file) {
-          file.println(apiKey);
-          file.close();
-          Serial.println("OpenAI API Key saved successfully!");
-          Serial.println("Key length: " + String(apiKey.length()) + " characters");
-        } else {
-          Serial.println("Failed to save API Key!");
-        }
-      } else {
-        Serial.println("Invalid API Key!");
-      }
-    }
-    else if (command == "GET_APIKEY") {
-      // Lese API Key (zeige nur erste und letzte 4 Zeichen)
-      File file = LittleFS.open("/apikey.txt", "r");
-      if (file) {
-        String apiKey = file.readStringUntil('\n');
-        apiKey.trim();
-        file.close();
-        
-        if (apiKey.length() > 8) {
-          String masked = apiKey.substring(0, 7) + "..." + apiKey.substring(apiKey.length() - 4);
-          Serial.println("API Key: " + masked);
-        } else {
-          Serial.println("API Key: (too short to display)");
-        }
-      } else {
-        Serial.println("No API Key configured");
-      }
-    }
-    else if (command == "DELETE_APIKEY") {
-      if (LittleFS.remove("/apikey.txt")) {
-        Serial.println("API Key deleted successfully!");
-      } else {
-        Serial.println("No API Key to delete");
-      }
-    }
-    else if (command == "GET_STATUS") {
-      Serial.println("\n=== Device Status ===");
-      Serial.println("Device ID: " + deviceId);
-      Serial.println("Device Name: " + deviceName);
-      Serial.println("WiFi Status: " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("IP Address: " + WiFi.localIP().toString());
-        Serial.println("SSID: " + WiFi.SSID());
-      }
-      
-      // API Key Status
-      File apiKeyFile = LittleFS.open("/apikey.txt", "r");
-      if (apiKeyFile) {
-        String key = apiKeyFile.readStringUntil('\n');
-        key.trim();
-        apiKeyFile.close();
-        if (key.length() > 8) {
-          String masked = key.substring(0, 7) + "..." + key.substring(key.length() - 4);
-          Serial.println("OpenAI API Key: " + masked);
-        } else {
-          Serial.println("OpenAI API Key: Configured (short)");
-        }
-      } else {
-        Serial.println("OpenAI API Key: Not configured");
-      }
-      
-      Serial.println("Frame Count: " + String(frameCount));
-      Serial.println("===================\n");
-    }
-    else if (command == "RESET_WIFI") {
-      Serial.println("Resetting WiFi config...");
-      WiFi.disconnect(true);
-      delay(1000);
-      ESP.restart();
-    }
+bool loadBinaryFrame(File& file, int frameIndex, uint32_t& duration) {
+  // Lese Animation-Header
+  file.seek(0);
+  AnimationHeader animHeader;
+  file.read((uint8_t*)&animHeader, sizeof(AnimationHeader));
+  
+  if (frameIndex >= animHeader.frameCount) {
+    return false;
   }
-}
-
-/**
- * Konvertiere Hex-Farbe zu CRGB
- */
-CRGB hexToRGB(String hexColor) {
-  // Entferne # falls vorhanden
-  hexColor.replace("#", "");
   
-  long number = strtol(hexColor.c_str(), NULL, 16);
-  int r = number >> 16;
-  int g = (number >> 8) & 0xFF;
-  int b = number & 0xFF;
+  // Überspringe zum gewünschten Frame
+  size_t offset = sizeof(AnimationHeader);
+  for (int i = 0; i < frameIndex; i++) {
+    file.seek(offset);
+    FrameHeader header;
+    file.read((uint8_t*)&header, sizeof(FrameHeader));
+    offset += sizeof(FrameHeader) + (header.width * header.height * 3);
+  }
   
-  return CRGB(r, g, b);
-}
-
-/**
- * Zeige Pixel-Array auf LED Matrix
- * Konvertiert 16x16 Pixel-Array zu LED Matrix Layout
- */
-void displayPixelArray(JsonArray pixelArray) {
-  // pixelArray ist ein 16x16 Array von Hex-Farben
-  // z.B. [["#FF0000", "#00FF00", ...], [...], ...]
+  // Lese Frame-Header
+  file.seek(offset);
+  FrameHeader header;
+  file.read((uint8_t*)&header, sizeof(FrameHeader));
   
-  int arrayHeight = pixelArray.size();
+  duration = header.duration;
   
-  for (int y = 0; y < arrayHeight && y < MATRIX_HEIGHT; y++) {
-    JsonArray row = pixelArray[y];
-    int arrayWidth = row.size();
-    
-    for (int x = 0; x < arrayWidth && x < MATRIX_WIDTH; x++) {
-      String hexColor = row[x].as<String>();
-      CRGB color = hexToRGB(hexColor);
+  // Lese Pixel-Daten direkt in LED-Array
+  uint8_t rgb[3];
+  for (int y = 0; y < header.height && y < MATRIX_HEIGHT; y++) {
+    for (int x = 0; x < header.width && x < MATRIX_WIDTH; x++) {
+      file.read(rgb, 3);
       
-      // Berechne LED-Index basierend auf Matrix-Layout
-      // Annahme: Serpentine Layout (Zick-Zack)
+      // Berechne LED-Index (Serpentine)
       int ledIndex;
       if (y % 2 == 0) {
-        // Gerade Zeile: links nach rechts
         ledIndex = y * MATRIX_WIDTH + x;
       } else {
-        // Ungerade Zeile: rechts nach links
         ledIndex = y * MATRIX_WIDTH + (MATRIX_WIDTH - 1 - x);
       }
       
       if (ledIndex < NUM_LEDS) {
-        leds[ledIndex] = color;
+        leds[ledIndex] = CRGB(rgb[0], rgb[1], rgb[2]);
       }
     }
   }
   
   FastLED.show();
+  return true;
 }
 
 /**
- * Lade und zeige Frames
+ * Lade und zeige Frames (nur Binär-Format)
  */
 void updateFrameDisplay() {
   // Prüfe ob Frames vorhanden sind
@@ -403,43 +299,45 @@ void updateFrameDisplay() {
     return;
   }
   
-  // Lade Frames aus LittleFS und zeige sie
-  File file = LittleFS.open(FRAME_FILE, "r");
-  if (!file) return;
-  
-  StaticJsonDocument<4096> doc;
-  DeserializationError error = deserializeJson(doc, file);
-  file.close();
-  
-  if (error) return;
-  
-  JsonArray framesArray = doc["frames"];
-  if (framesArray.size() == 0) return;
-  
-  // Zeige aktuellen Frame
-  if (currentFrameIndex < 0 || currentFrameIndex >= (int)framesArray.size()) {
+  // Initialisiere Frame-Index beim ersten Mal
+  if (currentFrameIndex < 0) {
     currentFrameIndex = 0;
     frameStartTime = millis();
+    Serial.println("📦 Starting BINARY animation playback");
   }
   
-  JsonObject frameObj = framesArray[currentFrameIndex];
+  // Prüfe ob es Zeit ist, den Frame zu wechseln
+  static unsigned long lastFrameLoad = 0;
+  unsigned long now = millis();
   
-  // Hole Frame-Daten
-  int duration = frameObj["duration"] | 3000;
-  JsonArray pixels = frameObj["pixels"];
-  
-  // Zeige Frame (Pixel-Array)
-  if (pixels.size() > 0) {
-    displayPixelArray(pixels);
-  }
-  
-  // Wechsle zum nächsten Frame nach Ablauf der Duration
-  if (millis() - frameStartTime > (unsigned long)duration) {
-    currentFrameIndex++;
-    if (currentFrameIndex >= (int)framesArray.size()) {
-      currentFrameIndex = 0; // Loop
+  // Lade Frame nur wenn nötig (bei Frame-Wechsel)
+  if (now - lastFrameLoad > 100) { // Maximal alle 100ms neu laden
+    lastFrameLoad = now;
+    
+    File file = LittleFS.open(FRAME_FILE, "r");
+    if (!file) {
+      Serial.println("Failed to open frames file");
+      return;
     }
-    frameStartTime = millis();
+    
+    uint32_t duration = 3000;
+    
+    // Lade binären Frame direkt
+    if (!loadBinaryFrame(file, currentFrameIndex, duration)) {
+      file.close();
+      return;
+    }
+    
+    file.close();
+    
+    // Wechsle zum nächsten Frame nach Ablauf der Duration
+    if (now - frameStartTime > duration) {
+      currentFrameIndex++;
+      if (currentFrameIndex >= frameCount) {
+        currentFrameIndex = 0; // Loop
+      }
+      frameStartTime = now;
+    }
   }
 }
 
@@ -449,9 +347,6 @@ void updateFrameDisplay() {
 void loop() {
   // HTTP Server
   server.handleClient();
-  
-  // Serial Commands
-  handleSerialCommands();
   
   // mDNS Update
   MDNS.update();
@@ -473,8 +368,36 @@ void saveWiFiConfig() {
  * Webserver Routes konfigurieren
  */
 void setupRoutes() {
-  // CORS Headers für alle Requests
-  server.enableCORS(true);
+  // WICHTIG: enableCORS(true) NICHT verwenden - führt zu doppelten Headers!
+  // Wir setzen CORS-Header manuell in jedem Handler
+  
+  // OPTIONS Handler für CORS Preflight Requests
+  server.on("/frames", HTTP_OPTIONS, []() {
+    Serial.println("OPTIONS /frames");
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204);
+  });
+  
+  server.on("/config", HTTP_OPTIONS, []() {
+    Serial.println("OPTIONS /config");
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "PUT, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204);
+  });
+  
+  server.on("/reset-wifi", HTTP_OPTIONS, []() {
+    Serial.println("OPTIONS /reset-wifi");
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Max-Age", "86400");
+    server.send(204);
+  });
   
   // GET / - Status Info
   server.on("/", HTTP_GET, handleRoot);
@@ -501,8 +424,19 @@ void setupRoutes() {
   // POST /reset-wifi - Reset WiFi Settings (startet Config Portal)
   server.on("/reset-wifi", HTTP_POST, handleResetWiFi);
   
-  // 404 Handler
-  server.onNotFound(handleNotFound);
+  // 404 Handler mit OPTIONS-Unterstützung
+  server.onNotFound([]() {
+    if (server.method() == HTTP_OPTIONS) {
+      Serial.println("OPTIONS request (catch-all) for: " + server.uri());
+      server.sendHeader("Access-Control-Allow-Origin", "*");
+      server.sendHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      server.sendHeader("Access-Control-Max-Age", "86400");
+      server.send(204);
+    } else {
+      handleNotFound();
+    }
+  });
 }
 
 /**
@@ -538,6 +472,8 @@ void handleRoot() {
  * Handler: Status
  */
 void handleStatus() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   StaticJsonDocument<256> doc;
   doc["status"] = "online";
   doc["deviceId"] = deviceId;
@@ -556,6 +492,8 @@ void handleStatus() {
  * Handler: Device Info
  */
 void handleInfo() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   StaticJsonDocument<400> doc;
   doc["firmware"] = "framolux";  // Identifier für Framolux Firmware
   doc["version"] = "2.0.0";
@@ -576,50 +514,128 @@ void handleInfo() {
 }
 
 /**
- * Handler: Upload Frames
+ * Handler: Upload Frames (nur Binär-Format)
  */
 void handleUploadFrames() {
+  // CORS Headers explizit setzen
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  
+  Serial.println("=== POST /frames ===");
+  Serial.println("Content-Type: " + server.header("Content-Type"));
+  Serial.println("Content-Length: " + server.header("Content-Length"));
+  
+  // WICHTIG: ESP8266WebServer hat die Daten bereits gelesen!
+  // Wir müssen server.arg("plain") verwenden, aber vorsichtig mit den Bytes umgehen
+  
   if (!server.hasArg("plain")) {
+    Serial.println("ERROR: No body data received!");
     server.send(400, "application/json", "{\"error\":\"No data received\"}");
     return;
   }
   
+  // Hole die Daten als String (enthält aber binäre Daten)
   String body = server.arg("plain");
-  Serial.println("Received frames data: " + String(body.length()) + " bytes");
+  size_t dataSize = body.length();
   
-  // Parse JSON
-  DynamicJsonDocument doc(32768); // 32KB für große Frame-Arrays
-  DeserializationError error = deserializeJson(doc, body);
+  Serial.println("Received data: " + String(dataSize) + " bytes");
   
-  if (error) {
-    Serial.println("JSON parse error: " + String(error.c_str()));
-    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+  if (dataSize == 0) {
+    Serial.println("ERROR: Empty body!");
+    server.send(400, "application/json", "{\"error\":\"No data received\"}");
     return;
   }
   
-  // Speichere Frames
-  if (saveFrames(body)) {
-    frameCount = doc["frames"].size();
-    
-    StaticJsonDocument<200> response;
-    response["success"] = true;
-    response["frameCount"] = frameCount;
-    response["message"] = "Frames saved successfully";
-    
-    String responseStr;
-    serializeJson(response, responseStr);
-    server.send(200, "application/json", responseStr);
-    
-    Serial.println("Frames saved: " + String(frameCount));
-  } else {
-    server.send(500, "application/json", "{\"error\":\"Failed to save frames\"}");
+  if (dataSize > 100000) {
+    Serial.println("ERROR: Data size too large: " + String(dataSize));
+    server.send(400, "application/json", "{\"error\":\"Data too large\"}");
+    return;
   }
+  
+  // Allokiere Buffer und kopiere Bytes
+  // WICHTIG: Verwende c_str() um direkt auf die Bytes zuzugreifen
+  uint8_t* data = (uint8_t*)malloc(dataSize);
+  if (!data) {
+    Serial.println("ERROR: Failed to allocate memory!");
+    server.send(500, "application/json", "{\"error\":\"Out of memory\"}");
+    return;
+  }
+  
+  // Kopiere die Bytes direkt (nicht als String behandeln!)
+  memcpy(data, body.c_str(), dataSize);
+  
+  Serial.println("Binary data size: " + String(dataSize) + " bytes");
+  
+  // Prüfe Mindestgröße (Animation-Header)
+  if (dataSize < sizeof(AnimationHeader)) {
+    Serial.println("ERROR: Data too small for animation header");
+    server.send(400, "application/json", "{\"error\":\"Invalid binary data\"}");
+    return;
+  }
+  
+  // Lese Animation-Header
+  AnimationHeader animHeader;
+  memcpy(&animHeader, data, sizeof(AnimationHeader));
+  
+  // Prüfe Magic-Bytes
+  if (strncmp(animHeader.magic, "FMLX", 4) != 0) {
+    Serial.println("ERROR: Invalid magic bytes");
+    server.send(400, "application/json", "{\"error\":\"Invalid binary format\"}");
+    return;
+  }
+  
+  Serial.println("✓ Valid binary format detected");
+  Serial.println("  Version: " + String(animHeader.version));
+  Serial.println("  Frame count: " + String(animHeader.frameCount));
+  Serial.println("  Loop: " + String(animHeader.loop ? "Yes" : "No"));
+  
+  // Speichere binäre Daten direkt
+  File file = LittleFS.open(FRAME_FILE, "w");
+  if (!file) {
+    Serial.println("ERROR: Failed to open file for writing");
+    server.send(500, "application/json", "{\"error\":\"Failed to save frames\"}");
+    return;
+  }
+  
+  size_t written = file.write(data, dataSize);
+  file.close();
+  
+  // Gebe Speicher frei
+  free(data);
+  
+  if (written != dataSize) {
+    Serial.println("ERROR: Write size mismatch");
+    server.send(500, "application/json", "{\"error\":\"Failed to save frames\"}");
+    return;
+  }
+  
+  frameCount = animHeader.frameCount;
+  
+  StaticJsonDocument<200> response;
+  response["success"] = true;
+  response["frameCount"] = frameCount;
+  response["message"] = "Frames saved successfully (Binary)";
+  response["bytesWritten"] = written;
+  response["compression"] = "binary";
+  
+  String responseStr;
+  serializeJson(response, responseStr);
+  server.send(200, "application/json", responseStr);
+  
+  Serial.println("✓ Binary frames saved: " + String(frameCount) + " frames, " + String(written) + " bytes");
+  Serial.println("Animation will start playing now!");
+  
+  // Reset Format-Check für neue Animation
+  currentFrameIndex = -1;
 }
 
 /**
  * Handler: Get Frames
  */
 void handleGetFrames() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   File file = LittleFS.open(FRAME_FILE, "r");
   if (!file) {
     server.send(404, "application/json", "{\"error\":\"No frames stored\"}");
@@ -636,6 +652,8 @@ void handleGetFrames() {
  * Handler: Clear Frames
  */
 void handleClearFrames() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   if (LittleFS.remove(FRAME_FILE)) {
     frameCount = 0;
     server.send(200, "application/json", "{\"success\":true,\"message\":\"Frames cleared\"}");
@@ -649,6 +667,8 @@ void handleClearFrames() {
  * Handler: Update Config (Device Name ändern)
  */
 void handleUpdateConfig() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"No data received\"}");
     return;
@@ -696,6 +716,7 @@ void handleUpdateConfig() {
  * Handler: Reset WiFi Settings
  */
 void handleResetWiFi() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send(200, "application/json", "{\"success\":true,\"message\":\"WiFi settings reset. Restarting...\"}");
   delay(1000);
   
@@ -711,23 +732,7 @@ void handleNotFound() {
 }
 
 /**
- * Frames in LittleFS speichern
- */
-bool saveFrames(String jsonData) {
-  File file = LittleFS.open(FRAME_FILE, "w");
-  if (!file) {
-    Serial.println("Failed to open file for writing");
-    return false;
-  }
-  
-  size_t written = file.print(jsonData);
-  file.close();
-  
-  return written > 0;
-}
-
-/**
- * Frames aus LittleFS laden
+ * Frames aus LittleFS laden (Binär-Format)
  */
 void loadFrames() {
   File file = LittleFS.open(FRAME_FILE, "r");
@@ -737,18 +742,26 @@ void loadFrames() {
     return;
   }
   
-  String content = file.readString();
+  // Lese Animation-Header
+  AnimationHeader animHeader;
+  size_t bytesRead = file.read((uint8_t*)&animHeader, sizeof(AnimationHeader));
   file.close();
   
-  DynamicJsonDocument doc(32768);
-  DeserializationError error = deserializeJson(doc, content);
-  
-  if (!error && doc.containsKey("frames")) {
-    frameCount = doc["frames"].size();
-    Serial.println("Loaded " + String(frameCount) + " frames from storage");
-  } else {
+  if (bytesRead != sizeof(AnimationHeader)) {
+    Serial.println("Failed to read animation header");
     frameCount = 0;
+    return;
   }
+  
+  // Prüfe Magic-Bytes
+  if (strncmp(animHeader.magic, "FMLX", 4) != 0) {
+    Serial.println("Invalid binary format in stored file");
+    frameCount = 0;
+    return;
+  }
+  
+  frameCount = animHeader.frameCount;
+  Serial.println("Loaded " + String(frameCount) + " frames from storage (binary)");
 }
 
 /**

@@ -475,80 +475,6 @@ export const useWebSerial = () => {
     checkSupport()
   }
 
-  /**
-   * Sende Command über Serial
-   */
-  const sendCommand = async (command: string) => {
-    if (!port || !port.writable) {
-      addLog('✗ Port not connected')
-      return false
-    }
-
-    try {
-      const writer = port.writable.getWriter()
-      const encoder = new TextEncoder()
-      await writer.write(encoder.encode(command + '\n'))
-      writer.releaseLock()
-      addLog(`→ Sent: ${command}`)
-      return true
-    } catch (error) {
-      console.error('Send command error:', error)
-      addLog('✗ Failed to send command')
-      return false
-    }
-  }
-
-  /**
-   * Konfiguriere WiFi über Serial
-   */
-  const configureWiFiViaSerial = async (ssid: string, password: string) => {
-    addLog('Configuring WiFi via Serial...')
-    const command = `SET_WIFI:${ssid}:${password}:`
-    return await sendCommand(command)
-  }
-
-  /**
-   * Setze Device-Namen über Serial
-   */
-  const setDeviceNameViaSerial = async (name: string) => {
-    addLog('Setting device name via Serial...')
-    const command = `SET_NAME:${name}`
-    return await sendCommand(command)
-  }
-
-  /**
-   * Hole Device-Status über Serial
-   */
-  const getDeviceStatus = async () => {
-    addLog('Requesting device status...')
-    return await sendCommand('GET_STATUS')
-  }
-
-  /**
-   * Setze OpenAI API Key über Serial
-   */
-  const setApiKeyViaSerial = async (apiKey: string) => {
-    addLog('Setting OpenAI API Key via Serial...')
-    const command = `SET_APIKEY:${apiKey}`
-    return await sendCommand(command)
-  }
-
-  /**
-   * Hole API Key Status über Serial
-   */
-  const getApiKeyStatus = async () => {
-    addLog('Requesting API Key status...')
-    return await sendCommand('GET_APIKEY')
-  }
-
-  /**
-   * Lösche API Key über Serial
-   */
-  const deleteApiKey = async () => {
-    addLog('Deleting API Key...')
-    return await sendCommand('DELETE_APIKEY')
-  }
-
   return {
     isSupported,
     isConnected,
@@ -561,12 +487,5 @@ export const useWebSerial = () => {
     disconnect,
     flashFirmware,
     clearLog,
-    sendCommand,
-    configureWiFiViaSerial,
-    setDeviceNameViaSerial,
-    getDeviceStatus,
-    setApiKeyViaSerial,
-    getApiKeyStatus,
-    deleteApiKey,
   }
 }

@@ -86,94 +86,10 @@
 
           <!-- Info: Serial Monitor -->
           <div v-if="isConnected && isFramoluxFirmware" class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p class="text-sm text-blue-800 mb-2">
-              <strong>💡 Serial Monitor aktiv:</strong> Du siehst alle Ausgaben des ESP8266 im Log unten.
+            <p class="text-sm text-blue-800">
+              <strong>💡 Serial Monitor aktiv:</strong> Du siehst alle Ausgaben des ESP8266 im Log unten. 
+              Hier findest du die WiFi AP-Informationen und später die IP-Adresse.
             </p>
-            <button
-              @click="showSerialConfig = !showSerialConfig"
-              class="text-sm text-blue-600 hover:text-blue-800 underline"
-            >
-              {{ showSerialConfig ? '▼ Erweiterte Serial-Konfiguration ausblenden' : '▶ Erweiterte Serial-Konfiguration anzeigen' }}
-            </button>
-          </div>
-
-          <!-- Serial Configuration -->
-          <div v-if="isConnected && isFramoluxFirmware && showSerialConfig" class="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-            <h4 class="font-semibold text-gray-800">WiFi über Serial konfigurieren</h4>
-            <p class="text-sm text-gray-600">
-              Konfiguriere WiFi direkt über USB ohne den WiFi Access Point zu nutzen.
-            </p>
-            
-            <div class="space-y-3">
-              <div>
-                <label class="block text-sm font-medium mb-1">WLAN-Name (SSID)</label>
-                <input
-                  v-model="serialWifiSsid"
-                  type="text"
-                  placeholder="Dein WLAN-Name"
-                  class="w-full px-3 py-2 border rounded-lg text-sm"
-                />
-              </div>
-              
-              <div>
-                <label class="block text-sm font-medium mb-1">WLAN-Passwort</label>
-                <input
-                  v-model="serialWifiPassword"
-                  type="password"
-                  placeholder="Dein WLAN-Passwort"
-                  class="w-full px-3 py-2 border rounded-lg text-sm"
-                />
-              </div>
-              
-              <div>
-                <label class="block text-sm font-medium mb-1">Geräte-Name (optional)</label>
-                <input
-                  v-model="serialDeviceName"
-                  type="text"
-                  placeholder="z.B. Wohnzimmer"
-                  maxlength="16"
-                  class="w-full px-3 py-2 border rounded-lg text-sm"
-                />
-              </div>
-              
-              <div>
-                <label class="block text-sm font-medium mb-1">OpenAI API Key (optional)</label>
-                <input
-                  v-model="serialApiKey"
-                  type="password"
-                  placeholder="sk-proj-..."
-                  class="w-full px-3 py-2 border rounded-lg text-sm font-mono"
-                />
-                <p class="text-xs text-gray-500 mt-1">
-                  Wird sicher auf dem ESP8266 gespeichert. Für KI-generierte Frames.
-                </p>
-              </div>
-              
-              <div class="flex gap-2 flex-wrap">
-                <button
-                  @click="configureViaSerial"
-                  :disabled="!serialWifiSsid || !serialWifiPassword"
-                  class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 text-sm"
-                >
-                  📡 WiFi konfigurieren
-                </button>
-                
-                <button
-                  @click="setApiKey"
-                  :disabled="!serialApiKey"
-                  class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 text-sm"
-                >
-                  🔑 API Key setzen
-                </button>
-                
-                <button
-                  @click="getStatus"
-                  class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
-                >
-                  📊 Status abrufen
-                </button>
-              </div>
-            </div>
           </div>
 
           <!-- Flash Progress -->
@@ -269,21 +185,10 @@ const {
   disconnect,
   flashFirmware,
   clearLog,
-  configureWiFiViaSerial,
-  setDeviceNameViaSerial,
-  getDeviceStatus,
-  setApiKeyViaSerial,
-  getApiKeyStatus,
-  deleteApiKey,
 } = useWebSerial()
 
 const flashComplete = ref(false)
 const logContainer = ref<HTMLElement | null>(null)
-const showSerialConfig = ref(false)
-const serialWifiSsid = ref('')
-const serialWifiPassword = ref('')
-const serialDeviceName = ref('')
-const serialApiKey = ref('')
 
 const connectDevice = async () => {
   try {
@@ -298,36 +203,6 @@ const triggerReset = async () => {
   await disconnect()
   await new Promise(resolve => setTimeout(resolve, 500))
   await connect()
-}
-
-const configureViaSerial = async () => {
-  if (!serialWifiSsid.value || !serialWifiPassword.value) {
-    alert('Bitte SSID und Passwort eingeben')
-    return
-  }
-  
-  // Setze Device-Namen falls angegeben
-  if (serialDeviceName.value) {
-    await setDeviceNameViaSerial(serialDeviceName.value)
-    await new Promise(resolve => setTimeout(resolve, 500))
-  }
-  
-  // Konfiguriere WiFi
-  await configureWiFiViaSerial(serialWifiSsid.value, serialWifiPassword.value)
-}
-
-const getStatus = async () => {
-  await getDeviceStatus()
-}
-
-const setApiKey = async () => {
-  if (!serialApiKey.value) {
-    alert('Bitte API Key eingeben')
-    return
-  }
-  
-  await setApiKeyViaSerial(serialApiKey.value)
-  serialApiKey.value = '' // Clear nach dem Setzen
 }
 
 // Highlight wichtige Log-Zeilen
