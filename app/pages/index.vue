@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { LEDAnimation } from '~/composables/useOpenAI'
 
 const isApiKeyModalOpen = ref(false)
+
+// Serial Port for ESP8266
+const { isConnected: isSerialConnected, sendLEDMatrix } = useSerialPort()
 
 // Initialize with empty/dark pixels
 const pixels = ref<string[][]>(
@@ -17,11 +20,13 @@ const animationInterval = ref<NodeJS.Timeout | null>(null)
 const handleCroppedImage = (imageData: string[][]) => {
   stopAnimation()
   pixels.value = imageData
+  sendToESP8266()
 }
 
 const resetMatrix = () => {
   stopAnimation()
   pixels.value = Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
+  sendToESP8266()
 }
 
 const handleAnimationGenerated = (animation: LEDAnimation) => {
@@ -53,6 +58,7 @@ const showFrame = (frameIndex: number) => {
   
   pixels.value = frame.pixels
   currentFrameIndex.value = frameIndex
+  sendToESP8266()
   
   // Schedule next frame
   animationInterval.value = setTimeout(() => {
@@ -75,6 +81,18 @@ const togglePlayPause = () => {
     playAnimation()
   }
 }
+
+// Send current matrix to ESP8266
+const sendToESP8266 = () => {
+  if (isSerialConnected.value) {
+    sendLEDMatrix(pixels.value)
+  }
+}
+
+// Watch for manual pixel changes and send to ESP8266
+watch(() => pixels.value, () => {
+  sendToESP8266()
+}, { deep: true })
 
 // Cleanup on unmount
 onUnmounted(() => {
@@ -111,6 +129,11 @@ onUnmounted(() => {
         <!-- LED Matrix Display - Cinema Center Stage -->
         <div class="flex justify-center py-8">
           <LedMatrix :pixels="pixels" />
+        </div>
+
+        <!-- ESP8266 Connection -->
+        <div class="flex justify-center">
+          <SerialConnection />
         </div>
 
         <!-- Controls: Prompt Input + Animation Controls -->
