@@ -87,6 +87,15 @@
             </button>
 
             <button
+              v-if="isConnected && !isFramoluxFirmware"
+              @click="triggerReset"
+              class="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              title="Versuche ESP8266 neu zu starten um Firmware zu erkennen"
+            >
+              🔄 Reset & Detect
+            </button>
+
+            <button
               v-if="isConnected"
               @click="disconnectDevice"
               class="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
@@ -207,6 +216,13 @@ const connectDevice = async () => {
   } catch (error) {
     alert('Verbindung fehlgeschlagen! Bitte prüfe die USB-Verbindung.')
   }
+}
+
+const triggerReset = async () => {
+  // Trenne und verbinde neu um Reset zu triggern
+  await disconnect()
+  await new Promise(resolve => setTimeout(resolve, 500))
+  await connect()
 }
 
 // Highlight wichtige Log-Zeilen

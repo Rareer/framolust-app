@@ -81,8 +81,31 @@ export const useWebSerial = () => {
         // Überwache Disconnect
         setupDisconnectListener()
         
-        // Lese Serial Output um Firmware zu erkennen
+        // Starte Serial Reader
         readSerialOutput()
+        
+        // Trigger Reset um Boot-Meldungen zu sehen
+        addLog('Triggering ESP8266 reset to detect firmware...')
+        try {
+          const portWithSignals = requestedPort as any
+          
+          // Methode 1: Standard DTR/RTS Reset
+          await portWithSignals.setSignals({ dataTerminalReady: false, requestToSend: true })
+          await new Promise(resolve => setTimeout(resolve, 250))
+          await portWithSignals.setSignals({ dataTerminalReady: false, requestToSend: false })
+          await new Promise(resolve => setTimeout(resolve, 250))
+          
+          // Methode 2: Alternative Reset-Sequenz
+          await portWithSignals.setSignals({ dataTerminalReady: true, requestToSend: false })
+          await new Promise(resolve => setTimeout(resolve, 100))
+          await portWithSignals.setSignals({ dataTerminalReady: false, requestToSend: false })
+          
+          addLog('✓ Reset triggered - waiting for boot messages...')
+        } catch (e) {
+          console.error('Reset error:', e)
+          addLog('⚠ Automatic reset failed')
+          addLog('Trying to detect firmware from current state...')
+        }
         
         return true
       } catch (openError: any) {
@@ -144,6 +167,15 @@ export const useWebSerial = () => {
       reader = textDecoder.readable.getReader()
 
       let buffer = ''
+      let noOutputTimeout: NodeJS.Timeout | null = null
+      
+      // Timeout: Wenn 5 Sekunden keine Framolux-Meldung kommt, als "unbekannt" markieren
+      noOutputTimeout = setTimeout(() => {
+        if (!isFramoluxFirmware.value) {
+          addLog('⚠ No Framolux firmware identifier detected in serial output')
+          addLog('This might be a different firmware or the device did not reset')
+        }
+      }, 5000)
       
       while (true) {
         const { value, done } = await reader.read()
@@ -153,6 +185,7 @@ export const useWebSerial = () => {
         
         // Prüfe auf Framolux Firmware Identifier
         if (buffer.includes('FRAMOLUX FIRMWARE')) {
+          if (noOutputTimeout) clearTimeout(noOutputTimeout)
           isFramoluxFirmware.value = true
           addLog('✓ Framolux Firmware detected!')
           
@@ -362,26 +395,46 @@ export const useWebSerial = () => {
       addLog('3. Configure your WiFi credentials')
       addLog('4. Device will connect to your network')
       
-      // Flash erfolgreich - starte Serial Monitor
+      // Flash erfolgreich - bereite Serial Monitor vor
       addLog('\n=================================')
-      addLog('Starting Serial Monitor...')
-      addLog('Watching ESP8266 boot output...')
+      addLog('Flash complete! Preparing Serial Monitor...')
       addLog('=================================\n')
       
-      // Warte kurz bis ESP8266 neu startet
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Cleanup: Transport und ESPLoader beenden
+      try {
+        if (transport) {
+          await transport.disconnect()
+          transport = null
+        }
+        esploader = null
+      } catch (e) {
+        console.log('Transport cleanup:', e)
+      }
+      
+      // Warte bis ESP8266 neu startet
+      addLog('Waiting for ESP8266 to restart...')
+      await new Promise(resolve => setTimeout(resolve, 3000))
       
       // Öffne Port neu für Serial Monitor
+      addLog('Starting Serial Monitor...')
       try {
-        await port.open({ baudRate: 115200 })
+        // Port sollte noch offen sein, aber nicht gelockt
+        const portInfo = port as any
+        if (!portInfo.readable || !portInfo.writable) {
+          await port.open({ baudRate: 115200 })
+        }
+        
         isConnected.value = true
         
         // Starte Serial Reader
         readSerialOutput()
         
         addLog('✓ Serial Monitor active - watching boot output...')
-      } catch (error) {
-        addLog('⚠ Could not start Serial Monitor (port may be busy)')
+        addLog('Look for "AP SSID:" and "IP address:" below\n')
+      } catch (error: any) {
+        console.error('Serial Monitor error:', error)
+        addLog('⚠ Could not start Serial Monitor automatically')
+        addLog('Please disconnect and reconnect to see serial output')
       }
       
       return true
