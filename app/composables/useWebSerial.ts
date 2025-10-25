@@ -181,11 +181,33 @@ export const useWebSerial = () => {
   }
 
   /**
+   * Stoppe Serial Reader
+   */
+  const stopSerialReader = async () => {
+    if (reader) {
+      try {
+        await reader.cancel()
+        reader.releaseLock()
+        reader = null
+        addLog('✓ Serial reader stopped')
+      } catch (error) {
+        console.error('Error stopping reader:', error)
+      }
+    }
+  }
+
+  /**
    * Trenne Verbindung
    */
   const disconnect = async () => {
     if (port) {
       try {
+        // Stoppe Reader zuerst
+        await stopSerialReader()
+        
+        // Warte kurz
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
         // Prüfe ob Port offen ist bevor wir versuchen zu schließen
         const portInfo = port as any
         if (portInfo.readable || portInfo.writable) {
@@ -199,16 +221,19 @@ export const useWebSerial = () => {
         transport = null
         esploader = null
         isConnected.value = false
+        isFramoluxFirmware.value = false
       } catch (error: any) {
         console.error('Failed to disconnect:', error)
         // Auch bei Fehler aufräumen
         port = null
         transport = null
         esploader = null
+        reader = null
         isConnected.value = false
+        isFramoluxFirmware.value = false
         
         // Ignoriere "already closed" Fehler
-        if (!error?.message?.includes('already closed')) {
+        if (!error?.message?.includes('already closed') && !error?.message?.includes('locked')) {
           addLog('⚠ Disconnect error (ignored): ' + error.message)
         }
       }
@@ -242,6 +267,11 @@ export const useWebSerial = () => {
       
       addLog(`✓ Firmware loaded (${(firmwareBuffer.byteLength / 1024).toFixed(2)} KB)`)
       
+      // Stoppe Serial Reader zuerst (wichtig!)
+      addLog('Stopping serial reader...')
+      await stopSerialReader()
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
       // Schließe Port falls offen (Transport wird ihn neu öffnen)
       const portInfo = port as any
       if (portInfo.readable || portInfo.writable) {
@@ -249,7 +279,7 @@ export const useWebSerial = () => {
         try {
           await port.close()
           // Warte kurz damit Port wirklich geschlossen ist
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise(resolve => setTimeout(resolve, 200))
         } catch (e) {
           console.log('Error closing port:', e)
           // Ignoriere Fehler beim Schließen
@@ -257,7 +287,7 @@ export const useWebSerial = () => {
       }
       
       // Warte nochmal kurz bevor Transport initialisiert wird
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 200))
       
       // Initialisiere Transport (öffnet Port intern)
       addLog('Initializing transport...')
