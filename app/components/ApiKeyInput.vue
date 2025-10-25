@@ -30,12 +30,13 @@ const hasApiKey = computed(() => !!apiKey.value)
 </script>
 
 <template>
-  <div class="flex items-center gap-2">
-    <UIcon name="i-heroicons-key" class="w-5 h-5 flex-shrink-0" />
+  <div class="flex items-center gap-3">
+    <UIcon name="i-heroicons-key" class="w-6 h-6 flex-shrink-0 text-indigo-400" />
     <UInput
       v-model="localApiKey"
       :type="showKey ? 'text' : 'password'"
       placeholder="OpenAI API Key (sk-...)"
+      size="lg"
       class="flex-1"
       :ui="{ base: 'font-mono text-sm' }"
     />
@@ -43,12 +44,14 @@ const hasApiKey = computed(() => !!apiKey.value)
       :icon="showKey ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'"
       color="neutral"
       variant="soft"
+      size="lg"
       @click="showKey = !showKey"
       title="Key anzeigen/verbergen"
     />
     <UButton
       icon="i-heroicons-check"
       color="primary"
+      size="lg"
       @click="saveApiKey"
       :disabled="!localApiKey"
       title="Speichern"
@@ -58,6 +61,7 @@ const hasApiKey = computed(() => !!apiKey.value)
       icon="i-heroicons-trash"
       color="error"
       variant="soft"
+      size="lg"
       @click="clearApiKey"
       title="Löschen"
     />

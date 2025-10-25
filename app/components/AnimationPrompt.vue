@@ -26,17 +26,19 @@ const hasApiKey = computed(() => !!apiKey.value)
 </script>
 
 <template>
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-3">
     <UInput
       v-model="prompt"
       placeholder="Beschreibe deine Animation (z.B. Ein pulsierendes Herz in rot)..."
       :disabled="!hasApiKey || isLoading"
+      size="lg"
       class="flex-1"
       @keyup.enter="handleGenerate"
     />
     <UButton
       icon="i-heroicons-sparkles"
       color="primary"
+      size="lg"
       :loading="isLoading"
       :disabled="!hasApiKey || !prompt.trim() || isLoading"
       @click="handleGenerate"

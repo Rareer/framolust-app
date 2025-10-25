@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import type { LEDAnimation } from '~/composables/useOpenAI'
 
+const isApiKeyModalOpen = ref(false)
+
 // Initialize with empty/dark pixels
 const pixels = ref<string[][]>(
   Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
@@ -81,44 +83,69 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-    <UContainer class="py-8">
-      <div class="space-y-8">
-        <!-- Header -->
-        <div class="text-center">
-          <h1 class="text-4xl font-bold text-gray-900 dark:text-white">
-            LED Matrix Designer
-          </h1>
+  <div class="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black">
+    <UContainer class="py-12 max-w-3xl">
+      <div class="max-w-4xl mx-auto space-y-10">
+        <!-- Header with Cinema Style -->
+        <div class="relative">
+          <div class="text-center space-y-3">
+            <h1 class="text-5xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
+              LED Matrix Designer
+            </h1>
+            <div class="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-indigo-500 to-transparent rounded-full"></div>
+          </div>
+          
+          <!-- API Key Button - Top Right -->
+          <div class="absolute top-0 right-0">
+            <UButton
+              icon="i-heroicons-key"
+              color="primary"
+              variant="soft"
+              size="lg"
+              @click="isApiKeyModalOpen = true"
+              title="API Key konfigurieren"
+            />
+          </div>
         </div>
 
-        <!-- API Key Configuration -->
-        <ApiKeyInput />
-
-        <!-- LED Matrix Display -->
-        <div class="flex justify-center">
-          <LedMatrix :pixels="pixels" :size="20" />
+        <!-- LED Matrix Display - Cinema Center Stage -->
+        <div class="flex justify-center py-8">
+          <LedMatrix :pixels="pixels" />
         </div>
 
         <!-- Controls: Prompt Input + Animation Controls -->
-        <div class="flex items-center gap-2">
-          <AnimationPrompt @animation-generated="handleAnimationGenerated" class="flex-1" />
-          <UButton
-            v-if="currentAnimation"
-            :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
-            :color="isPlaying ? 'warning' : 'success'"
-            variant="soft"
-            @click="togglePlayPause"
-            :title="isPlaying ? 'Pause' : 'Play'"
-          />
-          <UButton
-            icon="i-heroicons-arrow-path"
-            color="neutral"
-            variant="soft"
-            @click="resetMatrix"
-            title="Matrix zurücksetzen"
-          />
+        <div class="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 border border-gray-800/50 shadow-xl">
+          <div class="flex items-center gap-3">
+            <AnimationPrompt @animation-generated="handleAnimationGenerated" class="flex-1" />
+            <UButton
+              v-if="currentAnimation"
+              :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+              color="primary"
+              variant="soft"
+              size="lg"
+              @click="togglePlayPause"
+              :title="isPlaying ? 'Pause' : 'Play'"
+            />
+            <UButton
+              icon="i-heroicons-arrow-path"
+              color="neutral"
+              variant="soft"
+              size="lg"
+              @click="resetMatrix"
+              title="Matrix zurücksetzen"
+            />
+          </div>
         </div>
       </div>
     </UContainer>
+    
+    <!-- Ambient Light Effect -->
+    <div class="fixed inset-0 pointer-events-none">
+      <div class="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl"></div>
+      <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl"></div>
+    </div>
+
+    <!-- API Key Modal -->
+    <ApiKeyModal v-model:open="isApiKeyModalOpen" />
   </div>
 </template>
