@@ -9,6 +9,9 @@ const directImageUploadRef = ref<{ openModal: () => void } | null>(null)
 // ESP8266 Network Integration
 const { uploadFramesToDevice, selectedDevice, isDeviceOnline, startHealthCheck, stopHealthCheck } = useESP8266()
 
+// Matrix Transformation
+const { transformForPhysicalMatrix } = useMatrixTransform()
+
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
 
@@ -37,9 +40,12 @@ const handleDirectImageUpload = async (matrix: string[][]) => {
   // Wenn ESP8266 verbunden und online, direkt hochladen
   if (selectedDevice.value && isDeviceOnline.value) {
     try {
-      // Erstelle ein einzelnes Frame aus der Matrix
+      // Transformiere Matrix für physische LED-Anordnung
+      const transformedMatrix = transformForPhysicalMatrix(matrix)
+      
+      // Erstelle ein einzelnes Frame aus der transformierten Matrix
       const frames = [{
-        pixels: matrix,
+        pixels: transformedMatrix,
         duration: 1000 // Statisches Bild, Dauer irrelevant
       }]
       
@@ -98,7 +104,24 @@ const handleImageGenerated = async (imageUrl: string) => {
       
       if (matrix) {
         pixels.value = matrix
-        sendToESP8266()
+        
+        // Wenn ESP8266 verbunden und online, direkt hochladen
+        if (selectedDevice.value && isDeviceOnline.value) {
+          try {
+            // Transformiere Matrix für physische LED-Anordnung
+            const transformedMatrix = transformForPhysicalMatrix(matrix)
+            
+            const frames = [{
+              pixels: transformedMatrix,
+              duration: 1000
+            }]
+            
+            await uploadFramesToDevice(selectedDevice.value.ip, frames)
+            console.log('✅ AI-generiertes Bild erfolgreich auf ESP8266 geladen!')
+          } catch (error) {
+            console.error('Upload failed:', error)
+          }
+        }
       }
     }
     
@@ -178,12 +201,12 @@ const uploadFramesToESP = async (deviceIp: string) => {
   try {
     const { compressAnimation } = useFrameCompression()
     
-    // Konvertiere Animation zu Binär-Format
+    // Konvertiere Animation zu Binär-Format mit Transformation
     const animation = {
       description: currentAnimation.value.description || 'Custom Animation',
       loop: currentAnimation.value.loop !== false, // Default: true
       frames: currentAnimation.value.frames.map(frame => ({
-        pixels: frame.pixels, // 16x16 Array von Hex-Farben
+        pixels: transformForPhysicalMatrix(frame.pixels), // Transformiere für physische Matrix
         duration: frame.duration,
       }))
     }
