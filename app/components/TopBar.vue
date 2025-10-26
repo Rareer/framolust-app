@@ -12,6 +12,22 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// Power Control
+const { isPoweredOn, isLoading: isPowerLoading, togglePower, fetchPowerStatus } = usePowerControl()
+
+// Power-Status beim Gerätewechsel laden
+watch(() => props.selectedDevice?.ip, async (newIp) => {
+  if (newIp && props.isDeviceOnline) {
+    await fetchPowerStatus(newIp)
+  }
+}, { immediate: true })
+
+// Power Toggle Handler
+const handlePowerToggle = async () => {
+  if (!props.selectedDevice?.ip) return
+  await togglePower(props.selectedDevice.ip)
+}
+
 // Computed: Status-Text und -Farbe
 const deviceStatus = computed<{
   text: string
@@ -56,6 +72,18 @@ const deviceStatus = computed<{
         
         <!-- Actions -->
         <div class="flex items-center gap-2">
+          <!-- Power Button -->
+          <UButton
+            v-if="selectedDevice && isDeviceOnline"
+            :icon="isPoweredOn ? 'i-heroicons-power' : 'i-heroicons-power'"
+            :color="isPoweredOn ? 'success' : 'neutral'"
+            variant="soft"
+            @click="handlePowerToggle"
+            :loading="isPowerLoading"
+            :disabled="!isDeviceOnline"
+            :title="isPoweredOn ? 'LEDs ausschalten' : 'LEDs einschalten'"
+          />
+          
           <!-- Device Status & Setup -->
           <UButton
             :icon="deviceStatus.icon"
