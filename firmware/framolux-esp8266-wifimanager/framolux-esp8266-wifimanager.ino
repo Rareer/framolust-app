@@ -53,7 +53,6 @@ int frameCount = 0;
 CRGB leds[NUM_LEDS];
 int currentFrameIndex = -1;
 unsigned long frameStartTime = 0;
-bool isPoweredOn = true;  // Power-Status der LEDs
 
 // Frame Strukturen
 struct Frame {
@@ -284,11 +283,6 @@ bool loadBinaryFrame(File& file, int frameIndex, uint32_t& duration) {
  * Lade und zeige Frames (nur Binär-Format)
  */
 void updateFrameDisplay() {
-  // Wenn LEDs ausgeschaltet sind, nichts anzeigen
-  if (!isPoweredOn) {
-    return;
-  }
-  
   // Prüfe ob Frames vorhanden sind
   if (frameCount == 0) {
     // Keine Frames - zeige Idle-Animation
@@ -429,37 +423,6 @@ void setupRoutes() {
   
   // POST /reset-wifi - Reset WiFi Settings (startet Config Portal)
   server.on("/reset-wifi", HTTP_POST, handleResetWiFi);
-  
-  // POST /power/on - Power On LEDs
-  server.on("/power/on", HTTP_POST, handlePowerOn);
-  
-  // POST /power/off - Power Off LEDs
-  server.on("/power/off", HTTP_POST, handlePowerOff);
-  
-  // GET /power/status - Get Power Status
-  server.on("/power/status", HTTP_GET, handleGetPowerStatus);
-  
-  // OPTIONS Handler für Power-Endpoints
-  server.on("/power/on", HTTP_OPTIONS, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-    server.send(204);
-  });
-  
-  server.on("/power/off", HTTP_OPTIONS, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-    server.send(204);
-  });
-  
-  server.on("/power/status", HTTP_OPTIONS, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-    server.send(204);
-  });
   
   // 404 Handler mit OPTIONS-Unterstützung
   server.onNotFound([]() {
@@ -777,48 +740,6 @@ void handleResetWiFi() {
   
   wifiManager.resetSettings();
   ESP.restart();
-}
-
-/**
- * Handler: Power On
- */
-void handlePowerOn() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  
-  isPoweredOn = true;
-  Serial.println("🔌 LEDs powered ON");
-  
-  // Setze Frame-Index zurück, damit Animation neu startet
-  currentFrameIndex = -1;
-  frameStartTime = millis();
-  
-  server.send(200, "application/json", "{\"success\":true,\"powered\":true}");
-}
-
-/**
- * Handler: Power Off
- */
-void handlePowerOff() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  
-  isPoweredOn = false;
-  Serial.println("🔌 LEDs powered OFF");
-  
-  // Schalte alle LEDs aus
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
-  FastLED.show();
-  
-  server.send(200, "application/json", "{\"success\":true,\"powered\":false}");
-}
-
-/**
- * Handler: Get Power Status
- */
-void handleGetPowerStatus() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  
-  String json = "{\"powered\":" + String(isPoweredOn ? "true" : "false") + "}";
-  server.send(200, "application/json", json);
 }
 
 /**
