@@ -55,19 +55,20 @@ const handlePixelMouseEnter = (index: number) => {
 </script>
 
 <template>
-  <div class="led-matrix-wrapper">
+  <div class="w-full max-w-[600px] aspect-square p-3 md:p-6 rounded-2xl relative border-4 md:border-8 led-matrix-wrapper">
     <div 
-      class="led-matrix" 
-      :class="{ 'no-grid': !showGrid }"
+      class="w-full h-full grid grid-cols-16 grid-rows-16 gap-0.5"
+      :class="{ 'gap-0': !showGrid }"
       @mouseleave="emit('pixel-mouseup')"
     >
       <div
         v-for="(color, index) in pixels.flat()"
         :key="index"
-        class="led-pixel"
+        class="w-full h-full rounded-sm transition-all duration-200 led-pixel"
         :class="{
           'selected': isPixelSelected(index),
-          'selectable': selectionEnabled
+          'selectable cursor-pointer': selectionEnabled,
+          'rounded-none': !showGrid
         }"
         :style="{ backgroundColor: color }"
         @click="handlePixelClick(index, $event)"
@@ -81,15 +82,9 @@ const handlePixelMouseEnter = (index: number) => {
 
 <style scoped>
 .led-matrix-wrapper {
-  width: 100%;
-  max-width: 600px;
-  aspect-ratio: 1;
-  padding: 1.5rem;
   background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 50%, #0f0f0f 100%);
-  border-radius: 1rem;
   
   /* 3D Cinema Frame Effect */
-  border: 8px solid;
   border-image: linear-gradient(
     135deg,
     #4f46e5 0%,
@@ -106,9 +101,6 @@ const handlePixelMouseEnter = (index: number) => {
     0 20px 40px -8px rgba(0, 0, 0, 0.4),
     inset 0 2px 4px rgba(255, 255, 255, 0.05),
     inset 0 -2px 4px rgba(0, 0, 0, 0.3);
-  
-  /* Subtle glow */
-  position: relative;
 }
 
 .led-matrix-wrapper::before {
@@ -126,31 +118,10 @@ const handlePixelMouseEnter = (index: number) => {
   filter: blur(8px);
 }
 
-.led-matrix {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  grid-template-columns: repeat(16, 1fr);
-  grid-template-rows: repeat(16, 1fr);
-  gap: 2px;
-}
-
-.led-matrix.no-grid {
-  gap: 0;
-}
-
 .led-pixel {
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-  transition: all 0.2s ease;
   box-shadow: 
     inset 0 0 3px rgba(0, 0, 0, 0.6),
     0 0 2px rgba(0, 0, 0, 0.3);
-}
-
-.led-pixel.selectable {
-  cursor: pointer;
 }
 
 .led-pixel.selectable:hover {
@@ -167,10 +138,5 @@ const handlePixelMouseEnter = (index: number) => {
     0 0 0 2px rgba(79, 70, 229, 0.6);
   transform: scale(1.05);
   z-index: 10;
-}
-
-.no-grid .led-pixel {
-  border-radius: 0;
-  box-shadow: none;
 }
 </style>
