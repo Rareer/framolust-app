@@ -236,7 +236,10 @@ export const useFrameCompression = () => {
           pixels.push(row)
         }
         
-        frames.push({ pixels, duration })
+        // Rotiere zurück um 180° (da beim Komprimieren gedreht wurde)
+        const rotatedPixels = rotateMatrix180(pixels)
+        
+        frames.push({ pixels: rotatedPixels, duration })
       }
       
       return {

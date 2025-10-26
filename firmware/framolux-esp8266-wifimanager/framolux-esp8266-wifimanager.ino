@@ -631,7 +631,7 @@ void handleUploadFrames() {
 }
 
 /**
- * Handler: Get Frames
+ * Handler: Get Frames (Binär-Format)
  */
 void handleGetFrames() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -642,10 +642,28 @@ void handleGetFrames() {
     return;
   }
   
-  String content = file.readString();
-  file.close();
+  // Lese Dateigröße
+  size_t fileSize = file.size();
   
-  server.send(200, "application/json", content);
+  if (fileSize == 0) {
+    file.close();
+    server.send(404, "application/json", "{\"error\":\"No frames stored\"}");
+    return;
+  }
+  
+  // Sende binäre Daten direkt
+  server.setContentLength(fileSize);
+  server.send(200, "application/octet-stream", "");
+  
+  // Streame Datei in Chunks
+  uint8_t buffer[512];
+  while (file.available()) {
+    size_t bytesRead = file.read(buffer, sizeof(buffer));
+    server.client().write(buffer, bytesRead);
+  }
+  
+  file.close();
+  Serial.println("✓ Sent " + String(fileSize) + " bytes of binary frame data");
 }
 
 /**

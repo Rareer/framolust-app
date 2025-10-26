@@ -127,7 +127,7 @@
           </p>
         </div>
 
-        <div class="flex gap-4">
+        <div class="flex gap-4 flex-wrap">
           <button
             @click="$emit('upload-frames', selectedDevice.ip)"
             :disabled="isUploading || !hasPendingFrames"
@@ -135,6 +135,14 @@
             :title="!hasPendingFrames ? 'Erstelle zuerst eine Animation in der WebApp' : ''"
           >
             {{ isUploading ? 'Upload läuft...' : 'Frames hochladen' }}
+          </button>
+          <button
+            @click="loadFrames"
+            :disabled="isLoadingFrames || selectedDevice.frameCount === 0"
+            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+            :title="selectedDevice.frameCount === 0 ? 'Keine Frames auf dem Gerät gespeichert' : 'Frames vom Gerät in die App laden'"
+          >
+            {{ isLoadingFrames ? 'Lade...' : '📥 Frames vom Gerät laden' }}
           </button>
           <button
             @click="clearFrames"
@@ -171,6 +179,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'upload-frames': [deviceIp: string]
+  'load-frames': [animation: any]
 }>()
 
 const {
@@ -184,11 +193,13 @@ const {
   clearFramesOnDevice,
   renameDevice,
   loadKnownDevices,
+  loadFramesFromDevice,
 } = useESP8266()
 
 const showManualConnect = ref(false)
 const manualIp = ref('')
 const scanSubnet = ref('192.168.178') // Default für Fritzbox
+const isLoadingFrames = ref(false)
 
 // Prüfe ob Frames zum Upload bereit sind
 const hasPendingFrames = computed(() => {
@@ -249,6 +260,29 @@ const clearFrames = async () => {
     await connectToDevice(selectedDevice.value.ip)
   } catch (error) {
     alert('Fehler beim Löschen der Frames')
+  }
+}
+
+const loadFrames = async () => {
+  if (!selectedDevice.value) return
+  
+  isLoadingFrames.value = true
+  try {
+    console.log('Loading frames from device:', selectedDevice.value.ip)
+    const animation = await loadFramesFromDevice(selectedDevice.value.ip)
+    
+    if (animation) {
+      console.log('✓ Loaded animation:', animation)
+      emit('load-frames', animation)
+      alert(`✓ ${animation.frames.length} Frame(s) vom Gerät geladen!`)
+    } else {
+      throw new Error('No animation data received')
+    }
+  } catch (error) {
+    console.error('✗ Failed to load frames:', error)
+    alert('❌ Fehler beim Laden der Frames vom Gerät!')
+  } finally {
+    isLoadingFrames.value = false
   }
 }
 

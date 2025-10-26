@@ -368,18 +368,36 @@ export const useESP8266 = () => {
   }
 
   /**
-   * Hole gespeicherte Frames vom Gerät
+   * Hole gespeicherte Frames vom Gerät (Binär-Format)
    */
   const getFramesFromDevice = async (deviceIp: string) => {
     try {
-      const response = await $fetch<{
-        frames: Array<{ duration: number; leds: string[] }>
-        totalFrames: number
-      }>(`http://${deviceIp}/frames`, {
+      // Hole binäre Daten vom ESP8266
+      const response = await fetch(`http://${deviceIp}/frames`, {
         method: 'GET',
       })
 
-      return response
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      // Lese als ArrayBuffer
+      const arrayBuffer = await response.arrayBuffer()
+      const binaryData = new Uint8Array(arrayBuffer)
+
+      console.log(`📦 Received ${binaryData.length} bytes from device`)
+      console.log(`📦 First 16 bytes:`, Array.from(binaryData.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '))
+
+      // Dekomprimiere mit useFrameCompression
+      const { decompressAnimation } = useFrameCompression()
+      const animation = decompressAnimation(binaryData)
+
+      if (!animation) {
+        throw new Error('Failed to decompress animation')
+      }
+
+      console.log(`✓ Decompressed animation: ${animation.frames.length} frames`)
+      return animation
     } catch (error) {
       console.error('Failed to get frames from device:', error)
       return null
@@ -588,6 +606,24 @@ export const useESP8266 = () => {
     }
   }
 
+  /**
+   * Lade Frames vom Gerät und importiere sie in die App
+   */
+  const loadFramesFromDevice = async (deviceIp: string) => {
+    try {
+      const animation = await getFramesFromDevice(deviceIp)
+      
+      if (!animation) {
+        throw new Error('No animation data received')
+      }
+
+      return animation
+    } catch (error) {
+      console.error('Failed to load frames from device:', error)
+      throw error
+    }
+  }
+
   return {
     devices,
     selectedDevice,
@@ -605,6 +641,7 @@ export const useESP8266 = () => {
     checkDeviceStatus,
     uploadFramesToDevice,
     getFramesFromDevice,
+    loadFramesFromDevice,
     clearFramesOnDevice,
     renameDevice,
     generateBuildCommand,

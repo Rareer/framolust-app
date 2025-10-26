@@ -230,6 +230,25 @@ const uploadFramesToESP = async () => {
   await deviceUpload.uploadAnimation(currentAnimation.value)
 }
 
+// Load frames from ESP8266
+const handleLoadFramesFromDevice = (animation: any) => {
+  console.log('Loading animation from device:', animation)
+  
+  // Setze die Animation
+  currentAnimation.value = animation
+  currentFrameIndex.value = 0
+  
+  // Zeige ersten Frame
+  if (animation.frames.length > 0) {
+    matrixEditor.setPixels(animation.frames[0].pixels)
+  }
+  
+  // Schließe Modal
+  isESP8266SetupOpen.value = false
+  
+  console.log('✓ Animation loaded from device')
+}
+
 // Watch for manual pixel changes and send to ESP8266
 watch(() => pixels.value, () => {
   // Removed sendToESP8266() call
@@ -415,7 +434,8 @@ onUnmounted(() => {
           </template>
           <ESP8266Setup 
             :current-animation="currentAnimation"
-            @upload-frames="uploadFramesToESP" 
+            @upload-frames="uploadFramesToESP"
+            @load-frames="handleLoadFramesFromDevice"
           />
         </UCard>
       </template>
