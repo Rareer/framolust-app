@@ -2,21 +2,78 @@
 interface Props {
   pixels: string[][]
   showGrid?: boolean
+  selectedPixels?: Set<string>
+  selectionEnabled?: boolean
 }
 
-withDefaults(defineProps<Props>(), {
-  showGrid: true
+interface Emits {
+  (e: 'pixel-click', x: number, y: number, shiftKey: boolean): void
+  (e: 'pixel-mousedown', x: number, y: number): void
+  (e: 'pixel-mouseenter', x: number, y: number): void
+  (e: 'pixel-mouseup'): void
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  showGrid: true,
+  selectionEnabled: false
 })
+
+const emit = defineEmits<Emits>()
+
+// Konvertiert flachen Index zu x,y Koordinaten
+const indexToCoord = (index: number) => {
+  const x = index % 16
+  const y = Math.floor(index / 16)
+  return { x, y }
+}
+
+// Prüft ob ein Pixel selektiert ist
+const isPixelSelected = (index: number): boolean => {
+  if (!props.selectedPixels || !props.selectionEnabled) return false
+  const { x, y } = indexToCoord(index)
+  return props.selectedPixels.has(`${x},${y}`)
+}
+
+// Mouse-Event-Handler
+const handlePixelClick = (index: number, event: MouseEvent) => {
+  if (!props.selectionEnabled) return
+  const { x, y } = indexToCoord(index)
+  emit('pixel-click', x, y, event.shiftKey)
+}
+
+const handlePixelMouseDown = (index: number) => {
+  if (!props.selectionEnabled) return
+  const { x, y } = indexToCoord(index)
+  emit('pixel-mousedown', x, y)
+}
+
+const handlePixelMouseEnter = (index: number) => {
+  if (!props.selectionEnabled) return
+  const { x, y } = indexToCoord(index)
+  emit('pixel-mouseenter', x, y)
+}
 </script>
 
 <template>
   <div class="led-matrix-wrapper">
-    <div class="led-matrix" :class="{ 'no-grid': !showGrid }">
+    <div 
+      class="led-matrix" 
+      :class="{ 'no-grid': !showGrid }"
+      @mouseleave="emit('pixel-mouseup')"
+    >
       <div
         v-for="(color, index) in pixels.flat()"
         :key="index"
         class="led-pixel"
+        :class="{
+          'selected': isPixelSelected(index),
+          'selectable': selectionEnabled
+        }"
         :style="{ backgroundColor: color }"
+        @click="handlePixelClick(index, $event)"
+        @mousedown="handlePixelMouseDown(index)"
+        @mouseenter="handlePixelMouseEnter(index)"
+        @mouseup="emit('pixel-mouseup')"
       />
     </div>
   </div>
@@ -86,10 +143,30 @@ withDefaults(defineProps<Props>(), {
   width: 100%;
   height: 100%;
   border-radius: 2px;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
   box-shadow: 
     inset 0 0 3px rgba(0, 0, 0, 0.6),
     0 0 2px rgba(0, 0, 0, 0.3);
+}
+
+.led-pixel.selectable {
+  cursor: pointer;
+}
+
+.led-pixel.selectable:hover {
+  transform: scale(1.1);
+  box-shadow: 
+    inset 0 0 3px rgba(0, 0, 0, 0.6),
+    0 0 8px rgba(79, 70, 229, 0.5);
+}
+
+.led-pixel.selected {
+  box-shadow: 
+    inset 0 0 3px rgba(0, 0, 0, 0.6),
+    0 0 12px rgba(79, 70, 229, 0.8),
+    0 0 0 2px rgba(79, 70, 229, 0.6);
+  transform: scale(1.05);
+  z-index: 10;
 }
 
 .no-grid .led-pixel {

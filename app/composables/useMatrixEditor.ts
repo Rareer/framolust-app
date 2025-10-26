@@ -4,9 +4,9 @@ import { ref, type Ref } from 'vue'
  * Composable für Matrix/Pixel-Management
  */
 export const useMatrixEditor = () => {
-  // Initialize with empty/dark pixels
+  // Initialize with empty/dark pixels (pure black)
   const pixels = ref<string[][]>(
-    Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
+    Array(16).fill(null).map(() => Array(16).fill('#000000'))
   )
 
   /**
@@ -20,14 +20,14 @@ export const useMatrixEditor = () => {
    * Setzt die Matrix zurück auf leer/dunkel
    */
   const resetPixels = () => {
-    pixels.value = Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
+    pixels.value = Array(16).fill(null).map(() => Array(16).fill('#000000'))
   }
 
   /**
    * Erstellt eine leere Matrix
    */
   const createEmptyMatrix = (): string[][] => {
-    return Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
+    return Array(16).fill(null).map(() => Array(16).fill('#000000'))
   }
 
   return {

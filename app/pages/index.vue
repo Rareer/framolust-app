@@ -13,12 +13,16 @@ const matrixEditor = useMatrixEditor()
 const frameManager = useFrameManager()
 const deviceUpload = useDeviceUpload()
 const animationHandlers = useAnimationHandlers(frameManager, matrixEditor, deviceUpload)
+const pixelSelection = usePixelSelection()
+const frameClipboard = useFrameClipboard()
 
 // Destructure für Template-Zugriff
 const { pixels } = matrixEditor
 const { currentAnimation, currentFrameIndex, isPlaying } = frameManager
 const { selectedDevice, isDeviceOnline } = deviceUpload
 const { handleAnimationGenerated, handleImageGenerated, handleDirectImageUpload, handleCroppedImage, initializeEmptyAnimation, resetAll } = animationHandlers
+const { selectedPixels, selectedCount, isPixelSelected, selectPixel, startRectSelection, updateRectSelection, endRectSelection, clearSelection, getSelectedCoordinates, getSelectedColors, editorMode, paintColor, isPainting, toggleMode, setPaintColor, startPainting, stopPainting } = pixelSelection
+const { copyFrame, pasteFrame, hasClipboard } = frameClipboard
 
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
@@ -34,8 +38,153 @@ const openDirectImageUpload = () => {
   directImageUploadRef.value?.openModal()
 }
 
-const resetMatrix = () => {
-  resetAll()
+// Delete All Frames Handler
+const handleDeleteAllFrames = () => {
+  // Bestätigung vom User
+  if (!confirm('Möchtest du wirklich alle Frames löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
+    return
+  }
+  
+  // Erstelle neue leere Animation mit einem schwarzen Frame
+  const emptyPixels = matrixEditor.createEmptyMatrix()
+  matrixEditor.setPixels(emptyPixels)
+  
+  currentAnimation.value = {
+    description: 'Manuelle Animation',
+    loop: true,
+    frames: [{
+      pixels: emptyPixels,
+      duration: 1000
+    }]
+  }
+  
+  currentFrameIndex.value = 0
+  frameManager.stopAnimation()
+  clearSelection()
+}
+
+// Frame Editor State - Selektion ist immer aktiviert, Modus wird über editorMode gesteuert
+const selectionEnabled = ref(true)
+
+// Computed: Farben der selektierten Pixel
+const selectedColors = computed(() => {
+  return getSelectedColors(pixels.value)
+})
+
+// Pixel-Selektion/Paint Event-Handler
+const handlePixelClick = (x: number, y: number, shiftKey: boolean) => {
+  if (editorMode.value === 'select') {
+    selectPixel(x, y, shiftKey)
+  } else {
+    // Im Paint-Modus: Pixel einfärben
+    paintPixel(x, y)
+  }
+}
+
+const handlePixelMouseDown = (x: number, y: number) => {
+  if (editorMode.value === 'select') {
+    startRectSelection(x, y)
+  } else {
+    // Im Paint-Modus: Malen starten
+    startPainting()
+    paintPixel(x, y)
+  }
+}
+
+const handlePixelMouseEnter = (x: number, y: number) => {
+  if (editorMode.value === 'select') {
+    updateRectSelection(x, y)
+  } else if (isPainting.value) {
+    // Im Paint-Modus: Pixel einfärben während Maus gedrückt
+    paintPixel(x, y)
+  }
+}
+
+const handlePixelMouseUp = () => {
+  if (editorMode.value === 'select') {
+    endRectSelection()
+  } else {
+    stopPainting()
+  }
+}
+
+// Paint-Funktion
+const paintPixel = (x: number, y: number) => {
+  if (pixels.value[y] && pixels.value[y][x] !== undefined) {
+    pixels.value[y][x] = paintColor.value
+    
+    // Aktualisiere aktuellen Frame in der Animation
+    if (currentAnimation.value) {
+      currentAnimation.value.frames[currentFrameIndex.value] = {
+        pixels: pixels.value,
+        duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
+      }
+    }
+  }
+}
+
+// Color Change Handler
+const handleColorChange = (color: string) => {
+  if (editorMode.value === 'paint') {
+    // Im Paint-Modus: Pinselfarbe ändern
+    setPaintColor(color)
+  } else {
+    // Im Select-Modus: Farbe auf alle selektierten Pixel anwenden
+    const coords = getSelectedCoordinates()
+    coords.forEach(({ x, y }) => {
+      if (pixels.value[y] && pixels.value[y][x] !== undefined) {
+        pixels.value[y][x] = color
+      }
+    })
+    
+    // Aktualisiere aktuellen Frame in der Animation
+    if (currentAnimation.value) {
+      currentAnimation.value.frames[currentFrameIndex.value] = {
+        pixels: pixels.value,
+        duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
+      }
+    }
+  }
+}
+
+// Frame Copy/Paste Handler
+const handleCopyFrame = () => {
+  copyFrame(pixels.value)
+}
+
+const handlePasteFrame = () => {
+  const pastedPixels = pasteFrame()
+  if (pastedPixels) {
+    matrixEditor.setPixels(pastedPixels)
+    
+    // Aktualisiere aktuellen Frame in der Animation
+    if (currentAnimation.value) {
+      currentAnimation.value.frames[currentFrameIndex.value] = {
+        pixels: pastedPixels,
+        duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
+      }
+    }
+  }
+}
+
+// Fill All Handler - Färbt alle Pixel in der aktuellen Farbe
+const handleFillAll = () => {
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const row = pixels.value[y]
+      if (row && row[x] !== undefined) {
+        row[x] = paintColor.value
+      }
+    }
+  }
+  
+  // Aktualisiere aktuellen Frame in der Animation
+  if (currentAnimation.value) {
+    currentAnimation.value.frames[currentFrameIndex.value] = {
+      pixels: pixels.value,
+      duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
+    }
+  }
 }
 
 // Wrapper-Funktionen für Event-Handler mit Pixel-Update
@@ -160,8 +309,31 @@ onUnmounted(() => {
 
         <!-- LED Matrix Display - Cinema Center Stage -->
         <div class="flex justify-center py-8">
-          <LedMatrix :pixels="pixels" />
+          <LedMatrix
+            :pixels="pixels"
+            :selection-enabled="selectionEnabled"
+            :selected-pixels="selectedPixels"
+            @pixel-click="handlePixelClick"
+            @pixel-mousedown="handlePixelMouseDown"
+            @pixel-mouseenter="handlePixelMouseEnter"
+            @pixel-mouseup="handlePixelMouseUp"
+          />
         </div>
+        
+        <!-- Frame Editor Toolbar -->
+        <FrameEditorToolbar
+          :selected-pixel-count="selectedCount"
+          :selected-colors="selectedColors"
+          :has-clipboard="hasClipboard()"
+          :current-color="paintColor"
+          :editor-mode="editorMode"
+          @color-change="handleColorChange"
+          @copy-frame="handleCopyFrame"
+          @paste-frame="handlePasteFrame"
+          @clear-selection="clearSelection"
+          @toggle-mode="toggleMode"
+          @fill-all="handleFillAll"
+        />
 
         <!-- Werkzeugleiste unter der Matrix -->
         <MatrixToolbar
@@ -170,13 +342,13 @@ onUnmounted(() => {
           :is-playing="isPlaying"
           :selected-device="selectedDevice"
           :is-device-online="isDeviceOnline"
+          @delete-all-frames="handleDeleteAllFrames"
           @open-ai-prompt="isAIPromptModalOpen = true"
           @open-image-upload="openDirectImageUpload"
           @delete-frame="handleDeleteFrame"
           @go-to-frame="handleGoToFrame"
           @add-frame="handleAddFrame"
           @toggle-play-pause="handleTogglePlayPause"
-          @reset-matrix="resetMatrix"
           @upload-to-device="uploadFramesToESP"
           @open-device-setup="isESP8266SetupOpen = true"
         />

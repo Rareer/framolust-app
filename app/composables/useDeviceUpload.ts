@@ -6,6 +6,7 @@ import type { LEDAnimation } from '~/composables/useOpenAI'
 export const useDeviceUpload = () => {
   const { uploadFramesToDevice, selectedDevice, isDeviceOnline } = useESP8266()
   const { transformForPhysicalMatrix } = useMatrixTransform()
+  const toast = useToast()
 
   /**
    * Lädt ein einzelnes Bild (Frame) auf den ESP8266
@@ -13,9 +14,19 @@ export const useDeviceUpload = () => {
   const uploadSingleFrame = async (matrix: string[][]) => {
     if (!selectedDevice.value || !isDeviceOnline.value) {
       if (selectedDevice.value && !isDeviceOnline.value) {
-        alert('⚠️ ESP8266 ist nicht erreichbar. Bild wurde nur lokal geladen.')
+        toast.add({
+          title: 'Gerät offline',
+          description: 'ESP8266 ist nicht erreichbar. Bild wurde nur lokal geladen.',
+          color: 'warning',
+          icon: 'i-heroicons-exclamation-triangle'
+        })
       } else {
-        alert('ℹ️ Kein ESP8266 verbunden. Bild wurde nur lokal geladen.')
+        toast.add({
+          title: 'Kein Gerät',
+          description: 'Kein ESP8266 verbunden. Bild wurde nur lokal geladen.',
+          color: 'info',
+          icon: 'i-heroicons-information-circle'
+        })
       }
       return false
     }
@@ -31,11 +42,21 @@ export const useDeviceUpload = () => {
       }]
       
       await uploadFramesToDevice(selectedDevice.value.ip, frames)
-      alert('✅ Bild erfolgreich auf ESP8266 geladen!')
+      toast.add({
+        title: 'Upload erfolgreich',
+        description: 'Bild wurde auf ESP8266 geladen',
+        color: 'success',
+        icon: 'i-heroicons-check-circle'
+      })
       return true
     } catch (error) {
       console.error('Upload failed:', error)
-      alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
+      toast.add({
+        title: 'Upload fehlgeschlagen',
+        description: 'Prüfe die Verbindung zum ESP8266',
+        color: 'error',
+        icon: 'i-heroicons-x-circle'
+      })
       return false
     }
   }
@@ -45,7 +66,12 @@ export const useDeviceUpload = () => {
    */
   const uploadAnimation = async (animation: LEDAnimation) => {
     if (!selectedDevice.value || !isDeviceOnline.value) {
-      alert('Keine Animation vorhanden oder ESP8266 nicht verbunden!')
+      toast.add({
+        title: 'Upload nicht möglich',
+        description: 'Keine Animation vorhanden oder ESP8266 nicht verbunden',
+        color: 'warning',
+        icon: 'i-heroicons-exclamation-triangle'
+      })
       return false
     }
 
@@ -83,11 +109,21 @@ export const useDeviceUpload = () => {
       }
 
       const result = await response.json()
-      alert(`✓ Frames erfolgreich hochgeladen!\n${result.frameCount || transformedAnimation.frames.length} Frames auf ESP8266 gespeichert.`)
+      toast.add({
+        title: 'Animation hochgeladen',
+        description: `${result.frameCount || transformedAnimation.frames.length} Frames auf ESP8266 gespeichert`,
+        color: 'success',
+        icon: 'i-heroicons-check-circle'
+      })
       return true
     } catch (error) {
       console.error('Upload failed:', error)
-      alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
+      toast.add({
+        title: 'Upload fehlgeschlagen',
+        description: 'Prüfe die Verbindung zum ESP8266',
+        color: 'error',
+        icon: 'i-heroicons-x-circle'
+      })
       return false
     }
   }

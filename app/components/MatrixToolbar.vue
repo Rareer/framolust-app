@@ -10,13 +10,13 @@ interface Props {
 }
 
 interface Emits {
+  (e: 'delete-all-frames'): void
   (e: 'open-ai-prompt'): void
   (e: 'open-image-upload'): void
   (e: 'delete-frame'): void
   (e: 'go-to-frame', frameIndex: number): void
   (e: 'add-frame'): void
   (e: 'toggle-play-pause'): void
-  (e: 'reset-matrix'): void
   (e: 'upload-to-device'): void
   (e: 'open-device-setup'): void
   (e: 'update:currentFrameIndex', value: number): void
@@ -38,6 +38,19 @@ const localFrameIndex = computed({
 <template>
   <div class="flex justify-center">
     <div class="flex items-center gap-2 bg-gray-900/50 backdrop-blur-sm rounded-lg p-3 border border-gray-800/50 shadow-xl">
+      <!-- Delete All Frames Button -->
+      <UButton
+        icon="i-heroicons-trash"
+        color="error"
+        variant="soft"
+        size="lg"
+        @click="emit('delete-all-frames')"
+        title="Alle Frames löschen"
+      />
+      
+      <!-- Divider -->
+      <div class="h-8 w-px bg-gray-700"></div>
+      
       <!-- AI Prompt Button -->
       <UButton
         icon="i-heroicons-sparkles"
@@ -111,16 +124,6 @@ const localFrameIndex = computed({
           :title="isPlaying ? 'Pause' : 'Play'"
         />
       </template>
-      
-      <!-- Reset Button -->
-      <UButton
-        icon="i-heroicons-arrow-path"
-        color="neutral"
-        variant="soft"
-        size="lg"
-        @click="emit('reset-matrix')"
-        title="Matrix zurücksetzen"
-      />
       
       <!-- Divider -->
       <div class="h-8 w-px bg-gray-700"></div>
