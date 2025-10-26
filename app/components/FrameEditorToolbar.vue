@@ -95,7 +95,7 @@ const handleColorChange = (color: string | undefined) => {
       
       <!-- Fill All Button -->
       <UButton
-        icon="i-heroicons-paint-brush"
+        icon="i-heroicons-squares-2x2"
         color="primary"
         variant="soft"
         size="sm"

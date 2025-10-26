@@ -261,19 +261,19 @@ onUnmounted(() => {
 
 <template>
   <div class="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black">
+    <!-- Top Bar -->
+    <TopBar
+      :selected-device="selectedDevice"
+      :is-device-online="isDeviceOnline"
+      @open-api-key-modal="isApiKeyModalOpen = true"
+      @open-device-setup="isESP8266SetupOpen = true"
+    />
+    
     <UContainer class="py-12 max-w-6xl">
       <div class="max-w-6xl mx-auto space-y-10">
-        <!-- Header with Cinema Style -->
-        <div class="relative">
-          <div class="text-center space-y-3">
-            <h1 class="text-5xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
-              LED Matrix Designer
-            </h1>
-            <div class="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-indigo-500 to-transparent rounded-full"></div>
-          </div>
-          
-          <!-- Status & Settings - Top Right -->
-          <div class="absolute top-0 right-0 flex items-center gap-3">
+        <!-- Header entfernt - jetzt in TopBar -->
+        <div class="hidden">
+          <div class="hidden absolute top-0 right-0 flex items-center gap-3">
             <!-- Online Status Indicator -->
             <div v-if="esp8266Status && isDeviceOnline" class="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg" :title="`${esp8266Status.deviceName} (${esp8266Status.ip})`">
               <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>

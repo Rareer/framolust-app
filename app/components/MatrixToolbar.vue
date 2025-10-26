@@ -37,123 +37,128 @@ const localFrameIndex = computed({
 
 <template>
   <div class="flex justify-center">
-    <div class="flex items-center gap-2 bg-gray-900/50 backdrop-blur-sm rounded-lg p-3 border border-gray-800/50 shadow-xl">
-      <!-- Delete All Frames Button -->
-      <UButton
-        icon="i-heroicons-trash"
-        color="error"
-        variant="soft"
-        size="lg"
-        @click="emit('delete-all-frames')"
-        title="Alle Frames löschen"
-      />
-      
-      <!-- Divider -->
-      <div class="h-8 w-px bg-gray-700"></div>
-      
-      <!-- AI Prompt Button -->
-      <UButton
-        icon="i-heroicons-sparkles"
-        color="primary"
-        variant="soft"
-        size="lg"
-        @click="emit('open-ai-prompt')"
-        title="AI Animation/Bild generieren"
-      />
-      
-      <!-- Bild Upload Button -->
-      <UButton
-        icon="i-heroicons-arrow-up-tray"
-        color="primary"
-        variant="soft"
-        size="lg"
-        @click="emit('open-image-upload')"
-        title="Bild hochladen"
-      />
-      
-      <!-- Divider -->
-      <div class="h-8 w-px bg-gray-700"></div>
-      
-      <!-- Frame Management (immer sichtbar) -->
-      <template v-if="currentAnimation">
-        <!-- Delete Frame -->
-        <UButton
-          icon="i-heroicons-minus"
-          color="neutral"
-          variant="soft"
-          size="sm"
-          @click="emit('delete-frame')"
-          title="Frame löschen"
-          :disabled="currentAnimation.frames.length <= 1"
-        />
-        
-        <!-- Frame Slider & Info -->
-        <div class="flex items-center gap-2 px-2">
-          <span class="text-xs text-gray-400 whitespace-nowrap">
-            {{ currentFrameIndex + 1 }}/{{ currentAnimation.frames.length }}
-          </span>
-          <input
-            v-model.number="localFrameIndex"
-            type="range"
-            :min="0"
-            :max="currentAnimation.frames.length - 1"
-            class="w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+    <div class="flex flex-wrap items-center justify-center gap-2 bg-gray-900/50 backdrop-blur-sm rounded-lg p-3 border border-gray-800/50 shadow-xl max-w-full">
+      <!-- Group 1: Frame Controls (oben auf mobil, unten auf desktop) -->
+      <div class="flex items-center gap-2 order-1 md:order-2">
+        <template v-if="currentAnimation">
+          <!-- Delete Frame -->
+          <UButton
+            icon="i-heroicons-minus"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            @click="emit('delete-frame')"
+            title="Frame löschen"
+            :disabled="currentAnimation.frames.length <= 1"
           />
-        </div>
-        
-        <!-- Add Frame -->
+          
+          <!-- Frame Slider & Info -->
+          <div class="flex items-center gap-2 px-2">
+            <span class="text-xs text-gray-400 whitespace-nowrap">
+              {{ currentFrameIndex + 1 }}/{{ currentAnimation.frames.length }}
+            </span>
+            <input
+              v-model.number="localFrameIndex"
+              type="range"
+              :min="0"
+              :max="currentAnimation.frames.length - 1"
+              class="w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+          </div>
+          
+          <!-- Add Frame -->
+          <UButton
+            icon="i-heroicons-plus"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            @click="emit('add-frame')"
+            title="Frame hinzufügen"
+          />
+          
+          <!-- Divider (nur auf desktop) -->
+          <div class="hidden md:block h-8 w-px bg-gray-700"></div>
+          
+          <!-- Play/Pause Button -->
+          <UButton
+            :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+            color="primary"
+            variant="soft"
+            size="lg"
+            @click="emit('toggle-play-pause')"
+            :title="isPlaying ? 'Pause' : 'Play'"
+          />
+        </template>
+      </div>
+      
+      <!-- Divider zwischen Gruppen (nur auf mobil sichtbar) -->
+      <div class="w-full md:hidden order-2"></div>
+      
+      <!-- Group 2: Main Actions (unten auf mobil, oben auf desktop) -->
+      <div class="flex items-center gap-2 order-3 md:order-1">
+        <!-- Delete All Frames Button -->
         <UButton
-          icon="i-heroicons-plus"
-          color="neutral"
+          icon="i-heroicons-trash"
+          color="error"
           variant="soft"
-          size="sm"
-          @click="emit('add-frame')"
-          title="Frame hinzufügen"
+          size="lg"
+          @click="emit('delete-all-frames')"
+          title="Alle Frames löschen"
         />
         
         <!-- Divider -->
         <div class="h-8 w-px bg-gray-700"></div>
         
-        <!-- Play/Pause Button -->
+        <!-- AI Prompt Button -->
         <UButton
-          :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+          icon="i-heroicons-sparkles"
           color="primary"
           variant="soft"
           size="lg"
-          @click="emit('toggle-play-pause')"
-          :title="isPlaying ? 'Pause' : 'Play'"
+          @click="emit('open-ai-prompt')"
+          title="AI Animation/Bild generieren"
         />
-      </template>
-      
-      <!-- Divider -->
-      <div class="h-8 w-px bg-gray-700"></div>
-      
-      <!-- Upload to ESP8266 Button -->
-      <UButton
-        v-if="selectedDevice && isDeviceOnline"
-        icon="i-heroicons-arrow-up-tray"
-        color="success"
-        size="lg"
-        @click="emit('upload-to-device')"
-        title="An ESP8266 senden"
-      />
-      <UButton
-        v-else-if="selectedDevice && !isDeviceOnline"
-        icon="i-heroicons-arrow-up-tray"
-        color="neutral"
-        size="lg"
-        disabled
-        title="Gerät offline"
-      />
-      <UButton
-        v-else
-        icon="i-heroicons-cpu-chip"
-        color="neutral"
-        variant="soft"
-        size="lg"
-        @click="emit('open-device-setup')"
-        title="ESP8266 einrichten"
-      />
+        
+        <!-- Bild Upload Button -->
+        <UButton
+          icon="i-heroicons-arrow-up-tray"
+          color="primary"
+          variant="soft"
+          size="lg"
+          @click="emit('open-image-upload')"
+          title="Bild hochladen"
+        />
+        
+        <!-- Divider -->
+        <div class="h-8 w-px bg-gray-700"></div>
+        
+        <!-- Upload to ESP8266 Button -->
+        <UButton
+          v-if="selectedDevice && isDeviceOnline"
+          icon="i-heroicons-arrow-up-tray"
+          color="success"
+          size="lg"
+          @click="emit('upload-to-device')"
+          title="An ESP8266 senden"
+        />
+        <UButton
+          v-else-if="selectedDevice && !isDeviceOnline"
+          icon="i-heroicons-arrow-up-tray"
+          color="neutral"
+          size="lg"
+          disabled
+          title="Gerät offline"
+        />
+        <UButton
+          v-else
+          icon="i-heroicons-cpu-chip"
+          color="neutral"
+          variant="soft"
+          size="lg"
+          @click="emit('open-device-setup')"
+          title="ESP8266 einrichten"
+        />
+      </div>
     </div>
   </div>
 </template>
