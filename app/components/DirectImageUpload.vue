@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 interface Emits {
   (e: 'image-uploaded', matrix: string[][]): void
@@ -7,12 +7,15 @@ interface Emits {
 
 const emit = defineEmits<Emits>()
 
-const { quantizeImage } = useImageQuantizer()
+const { quantizeImage, adjustSaturation } = useImageQuantizer()
 
 const isOpen = ref(false)
 const uploadedImage = ref<string | null>(null)
 const croppedImage = ref<string | null>(null)
 const quantizedMatrix = ref<string[][] | null>(null)
+const baseQuantizedMatrix = ref<string[][] | null>(null) // Original ohne Sättigung
+const saturationBoost = ref(1.0) // 1.0 = keine Änderung, 3.0 = 3x Sättigung
+const zoomLevel = ref(1.0) // 1.0 = volle Größe, 0.5 = halbe Größe (mehr Zoom)
 const fileInput = ref<HTMLInputElement | null>(null)
 const cropperContainer = ref<HTMLDivElement | null>(null)
 const isProcessing = ref(false)
@@ -48,6 +51,7 @@ const handleFileSelect = (event: Event) => {
     uploadedImage.value = e.target?.result as string
     croppedImage.value = null
     quantizedMatrix.value = null
+    zoomLevel.value = 1.0 // Reset zoom
     
     // Wait for image to load to get dimensions
     setTimeout(() => {
@@ -59,17 +63,36 @@ const handleFileSelect = (event: Event) => {
         }
         
         // Center crop area
-        const minDim = Math.min(img.clientWidth, img.clientHeight)
-        cropArea.value = {
-          x: (img.clientWidth - minDim) / 2,
-          y: (img.clientHeight - minDim) / 2,
-          size: minDim
-        }
+        updateCropAreaSize()
       }
     }, 100)
   }
   reader.readAsDataURL(file)
 }
+
+// Update crop area size based on zoom level
+const updateCropAreaSize = () => {
+  if (!imageElement.value) return
+  
+  const img = imageElement.value
+  const minDim = Math.min(img.clientWidth, img.clientHeight)
+  const newSize = minDim * zoomLevel.value
+  
+  // Keep crop area centered when changing size
+  const centerX = cropArea.value.x + cropArea.value.size / 2
+  const centerY = cropArea.value.y + cropArea.value.size / 2
+  
+  cropArea.value = {
+    x: Math.max(0, Math.min(centerX - newSize / 2, img.clientWidth - newSize)),
+    y: Math.max(0, Math.min(centerY - newSize / 2, img.clientHeight - newSize)),
+    size: newSize
+  }
+}
+
+// Watch zoom level changes
+watch(zoomLevel, () => {
+  updateCropAreaSize()
+})
 
 const handleCropStart = (event: MouseEvent) => {
   isDragging.value = true
@@ -138,11 +161,20 @@ const handleCrop = async () => {
   // Quantize to 16x16
   const matrix = await quantizeImage(croppedImage.value)
   if (matrix) {
-    quantizedMatrix.value = matrix
+    baseQuantizedMatrix.value = matrix
+    // Apply current saturation boost
+    quantizedMatrix.value = adjustSaturation(matrix, saturationBoost.value)
   }
   
   isProcessing.value = false
 }
+
+// Watch saturation changes and update preview
+watch(saturationBoost, (newBoost) => {
+  if (baseQuantizedMatrix.value) {
+    quantizedMatrix.value = adjustSaturation(baseQuantizedMatrix.value, newBoost)
+  }
+})
 
 const handleConfirm = () => {
   if (!quantizedMatrix.value) return
@@ -155,6 +187,9 @@ const handleClose = () => {
   uploadedImage.value = null
   croppedImage.value = null
   quantizedMatrix.value = null
+  baseQuantizedMatrix.value = null
+  saturationBoost.value = 1.0
+  zoomLevel.value = 1.0
   isOpen.value = false
 }
 
@@ -256,6 +291,27 @@ defineExpose({
               </div>
             </div>
 
+            <!-- Zoom Slider -->
+            <div class="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-medium text-gray-300">Zoom / Ausschnitt</label>
+                <span class="text-sm text-gray-400">{{ Math.round((1 / zoomLevel) * 100) }}%</span>
+              </div>
+              <input
+                v-model.number="zoomLevel"
+                type="range"
+                min="0.3"
+                max="1.0"
+                step="0.05"
+                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <div class="flex justify-between text-xs text-gray-500">
+                <span>Mehr Zoom</span>
+                <span>Normal</span>
+                <span>Weniger Zoom</span>
+              </div>
+            </div>
+
             <div class="flex justify-center gap-3">
               <UButton
                 label="Neues Bild"
@@ -293,6 +349,27 @@ defineExpose({
                     <LedMatrix v-if="quantizedMatrix" :pixels="quantizedMatrix" :show-grid="false" />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Saturation Slider -->
+            <div class="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-medium text-gray-300">Sättigung</label>
+                <span class="text-sm text-gray-400">{{ saturationBoost.toFixed(1) }}x</span>
+              </div>
+              <input
+                v-model.number="saturationBoost"
+                type="range"
+                min="0.5"
+                max="3.0"
+                step="0.1"
+                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+              <div class="flex justify-between text-xs text-gray-500">
+                <span>Weniger</span>
+                <span>Normal (1.0x)</span>
+                <span>Mehr</span>
               </div>
             </div>
 
