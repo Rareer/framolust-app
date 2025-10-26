@@ -4,17 +4,13 @@ import type { LEDAnimation } from '~/composables/useOpenAI'
 
 const isApiKeyModalOpen = ref(false)
 const isESP8266SetupOpen = ref(false)
+const directImageUploadRef = ref<{ openModal: () => void } | null>(null)
 
 // ESP8266 Network Integration
-const { uploadFramesToDevice, selectedDevice } = useESP8266()
+const { uploadFramesToDevice, selectedDevice, isDeviceOnline, startHealthCheck, stopHealthCheck } = useESP8266()
 
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
-
-// Debug: Watch selectedDevice changes
-watch(selectedDevice, (newDevice) => {
-  console.log('🔄 selectedDevice changed:', newDevice)
-}, { deep: true })
 
 // Initialize with empty/dark pixels
 const pixels = ref<string[][]>(
@@ -30,6 +26,38 @@ const handleCroppedImage = (imageData: string[][]) => {
   stopAnimation()
   pixels.value = imageData
   sendToESP8266()
+}
+
+const handleDirectImageUpload = async (matrix: string[][]) => {
+  // Stoppe Animation und setze Matrix
+  stopAnimation()
+  currentAnimation.value = null
+  pixels.value = matrix
+  
+  // Wenn ESP8266 verbunden und online, direkt hochladen
+  if (selectedDevice.value && isDeviceOnline.value) {
+    try {
+      // Erstelle ein einzelnes Frame aus der Matrix
+      const frames = [{
+        pixels: matrix,
+        duration: 1000 // Statisches Bild, Dauer irrelevant
+      }]
+      
+      await uploadFramesToDevice(selectedDevice.value.ip, frames)
+      alert('✅ Bild erfolgreich auf ESP8266 geladen!')
+    } catch (error) {
+      console.error('Upload failed:', error)
+      alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
+    }
+  } else if (selectedDevice.value && !isDeviceOnline.value) {
+    alert('⚠️ ESP8266 ist nicht erreichbar. Bild wurde nur lokal geladen.')
+  } else {
+    alert('ℹ️ Kein ESP8266 verbunden. Bild wurde nur lokal geladen.')
+  }
+}
+
+const openDirectImageUpload = () => {
+  directImageUploadRef.value?.openModal()
 }
 
 const resetMatrix = () => {
@@ -48,6 +76,37 @@ const handleAnimationGenerated = (animation: LEDAnimation) => {
   
   // Starte neue Animation
   playAnimation()
+}
+
+const handleImageGenerated = async (imageUrl: string) => {
+  // Stoppe alte Animation
+  stopAnimation()
+  currentAnimation.value = null
+  
+  try {
+    // Lade das Bild und rastere es auf 16x16
+    const { quantizeImage } = useImageQuantizer()
+    
+    // Konvertiere die URL zu einem verwendbaren Format
+    const response = await fetch(imageUrl)
+    const blob = await response.blob()
+    const reader = new FileReader()
+    
+    reader.onload = async (e) => {
+      const imageData = e.target?.result as string
+      const matrix = await quantizeImage(imageData)
+      
+      if (matrix) {
+        pixels.value = matrix
+        sendToESP8266()
+      }
+    }
+    
+    reader.readAsDataURL(blob)
+  } catch (error) {
+    console.error('Fehler beim Rastern des Bildes:', error)
+    alert('Fehler beim Verarbeiten des generierten Bildes')
+  }
 }
 
 const playAnimation = () => {
@@ -159,9 +218,27 @@ const uploadFramesToESP = async (deviceIp: string) => {
   }
 }
 
+// Starte Health-Check wenn ein Gerät ausgewählt ist
+onMounted(() => {
+  if (selectedDevice.value) {
+    startHealthCheck()
+  }
+})
+
+// Watch für Änderungen am selectedDevice
+watch(selectedDevice, (newDevice) => {
+  console.log('🔄 selectedDevice changed:', newDevice)
+  if (newDevice) {
+    startHealthCheck()
+  } else {
+    stopHealthCheck()
+  }
+}, { deep: true })
+
 // Cleanup on unmount
 onUnmounted(() => {
   stopAnimation()
+  stopHealthCheck()
 })
 </script>
 
@@ -180,6 +257,14 @@ onUnmounted(() => {
           
           <!-- API Key & ESP8266 Setup Buttons - Top Right -->
           <div class="absolute top-0 right-0 flex gap-2">
+            <UButton
+              icon="i-heroicons-arrow-up-tray"
+              color="primary"
+              variant="soft"
+              size="lg"
+              @click="openDirectImageUpload"
+              title="Bild direkt auf Matrix laden"
+            />
             <UButton
               icon="i-heroicons-cpu-chip"
               color="success"
@@ -206,9 +291,13 @@ onUnmounted(() => {
 
         <!-- ESP8266 Status -->
         <div class="flex justify-center">
-          <div v-if="esp8266Status" class="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+          <div v-if="esp8266Status && isDeviceOnline" class="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
             <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span class="text-sm font-medium text-green-400">ESP8266 im Netzwerk: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
+            <span class="text-sm font-medium text-green-400">ESP8266 online: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
+          </div>
+          <div v-else-if="esp8266Status && !isDeviceOnline" class="flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+            <div class="w-2 h-2 bg-orange-400 rounded-full"></div>
+            <span class="text-sm font-medium text-orange-400">ESP8266 nicht erreichbar: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
           </div>
           <div v-else class="flex items-center gap-2 px-4 py-2 bg-gray-500/10 border border-gray-500/20 rounded-lg">
             <div class="w-2 h-2 bg-gray-400 rounded-full"></div>
@@ -219,7 +308,11 @@ onUnmounted(() => {
         <!-- Controls: Prompt Input + Animation Controls -->
         <div class="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 border border-gray-800/50 shadow-xl space-y-3">
           <div class="flex items-center gap-3">
-            <AnimationPrompt @animation-generated="handleAnimationGenerated" class="flex-1" />
+            <AnimationPrompt 
+              @animation-generated="handleAnimationGenerated" 
+              @image-generated="handleImageGenerated"
+              class="flex-1" 
+            />
             <UButton
               v-if="currentAnimation"
               :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
@@ -240,7 +333,7 @@ onUnmounted(() => {
           </div>
           
           <!-- Send to ESP8266 Button -->
-          <div v-if="currentAnimation && selectedDevice" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
+          <div v-if="currentAnimation && selectedDevice && isDeviceOnline" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
             <div class="flex-1 text-sm text-gray-400">
               <span class="font-medium text-green-400">{{ selectedDevice.deviceName }}</span> bereit
             </div>
@@ -250,6 +343,18 @@ onUnmounted(() => {
               size="lg"
               @click="uploadFramesToESP(selectedDevice.ip)"
               label="An ESP8266 senden"
+            />
+          </div>
+          <div v-else-if="currentAnimation && selectedDevice && !isDeviceOnline" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
+            <div class="flex-1 text-sm text-orange-400">
+              <span class="font-medium">{{ selectedDevice.deviceName }}</span> nicht erreichbar
+            </div>
+            <UButton
+              icon="i-heroicons-arrow-up-tray"
+              color="neutral"
+              size="lg"
+              disabled
+              label="Gerät offline"
             />
           </div>
           <div v-else-if="currentAnimation && !selectedDevice" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
@@ -282,6 +387,12 @@ onUnmounted(() => {
 
     <!-- API Key Modal -->
     <ApiKeyModal v-model:open="isApiKeyModalOpen" />
+
+    <!-- Direct Image Upload Modal -->
+    <DirectImageUpload 
+      ref="directImageUploadRef"
+      @image-uploaded="handleDirectImageUpload"
+    />
 
     <!-- ESP8266 Setup Modal -->
     <UModal v-model:open="isESP8266SetupOpen">

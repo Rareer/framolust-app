@@ -156,12 +156,65 @@ Wichtig:
     }
   }
 
+  const generateImageForRasterization = async (prompt: string): Promise<string | null> => {
+    if (!apiKey.value) {
+      error.value = 'API Key fehlt'
+      return null
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      // Optimierter Prompt für LED-Matrix-geeignete Bilder
+      const optimizedPrompt = `${prompt}. Style: High contrast illustration with bold colors, minimal details, simple shapes, flat design, suitable for pixel art conversion. Square composition, 1:1 aspect ratio.`
+
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey.value}`
+        },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: optimizedPrompt,
+          n: 1,
+          size: '1024x1024',
+          quality: 'standard',
+          style: 'vivid'
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error?.message || `API Fehler: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const imageUrl = data.data[0]?.url
+
+      if (!imageUrl) {
+        throw new Error('Keine Bild-URL von OpenAI erhalten')
+      }
+
+      return imageUrl
+
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
+      console.error('OpenAI Image API Error:', err)
+      return null
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     apiKey: readonly(apiKey),
     isLoading: readonly(isLoading),
     error: readonly(error),
     setApiKey,
     loadApiKey,
-    generateAnimation
+    generateAnimation,
+    generateImageForRasterization
   }
 }

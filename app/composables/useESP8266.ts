@@ -29,6 +29,9 @@ const selectedDevice = ref<ESP8266Device | null>(null)
 const isScanning = ref(false)
 const isUploading = ref(false)
 const uploadProgress = ref(0)
+const isDeviceOnline = ref(false)
+const lastPingTime = ref<number | null>(null)
+let healthCheckInterval: NodeJS.Timeout | null = null
 
 // Lade gespeichertes Gerät beim Start
 if (process.client) {
@@ -57,6 +60,77 @@ if (process.client) {
 }
 
 export const useESP8266 = () => {
+
+  /**
+   * Ping ein Gerät um zu prüfen ob es erreichbar ist
+   */
+  const pingDevice = async (ip: string, timeout: number = 2000): Promise<boolean> => {
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeout)
+      
+      const response = await fetch(`http://${ip}/api/info`, {
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'cors',
+      })
+      
+      clearTimeout(timeoutId)
+      
+      if (response.ok) {
+        lastPingTime.value = Date.now()
+        return true
+      }
+      return false
+    } catch (error) {
+      // Device nicht erreichbar
+      return false
+    }
+  }
+
+  /**
+   * Starte automatischen Health-Check für das ausgewählte Gerät
+   */
+  const startHealthCheck = (intervalMs: number = 10000) => {
+    // Stoppe vorherigen Interval falls vorhanden
+    stopHealthCheck()
+    
+    // Initiales Ping
+    if (selectedDevice.value) {
+      pingDevice(selectedDevice.value.ip).then(online => {
+        isDeviceOnline.value = online
+        if (selectedDevice.value) {
+          selectedDevice.value.status = online ? 'online' : 'offline'
+        }
+      })
+    }
+    
+    // Starte regelmäßiges Pingen
+    healthCheckInterval = setInterval(async () => {
+      if (selectedDevice.value) {
+        const online = await pingDevice(selectedDevice.value.ip)
+        isDeviceOnline.value = online
+        selectedDevice.value.status = online ? 'online' : 'offline'
+        
+        if (!online) {
+          console.warn(`⚠️ Device ${selectedDevice.value.deviceName} (${selectedDevice.value.ip}) is offline`)
+        }
+      } else {
+        // Kein Gerät ausgewählt, stoppe Health-Check
+        stopHealthCheck()
+      }
+    }, intervalMs)
+  }
+
+  /**
+   * Stoppe automatischen Health-Check
+   */
+  const stopHealthCheck = () => {
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval)
+      healthCheckInterval = null
+    }
+  }
 
   /**
    * Scanne nach ESP8266 Geräten im lokalen Netzwerk
@@ -520,6 +594,11 @@ export const useESP8266 = () => {
     isScanning,
     isUploading,
     uploadProgress,
+    isDeviceOnline,
+    lastPingTime,
+    pingDevice,
+    startHealthCheck,
+    stopHealthCheck,
     scanForDevices,
     connectToDevice,
     checkFramoluxFirmware,
