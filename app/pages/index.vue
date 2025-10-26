@@ -7,198 +7,60 @@ const isESP8266SetupOpen = ref(false)
 const isAIPromptModalOpen = ref(false)
 const directImageUploadRef = ref<{ openModal: () => void } | null>(null)
 
-// ESP8266 Network Integration
-const { uploadFramesToDevice, selectedDevice, isDeviceOnline, startHealthCheck, stopHealthCheck } = useESP8266()
+// Composables
+const { startHealthCheck, stopHealthCheck } = useESP8266()
+const matrixEditor = useMatrixEditor()
+const frameManager = useFrameManager()
+const deviceUpload = useDeviceUpload()
+const animationHandlers = useAnimationHandlers(frameManager, matrixEditor, deviceUpload)
 
-// Matrix Transformation
-const { transformForPhysicalMatrix } = useMatrixTransform()
-
-// Frame Manager
-const {
-  currentAnimation,
-  currentFrameIndex,
-  isPlaying,
-  playAnimation,
-  stopAnimation,
-  togglePlayPause,
-  goToFrame,
-  addFrame,
-  deleteFrame,
-  setAnimation,
-  resetAnimation
-} = useFrameManager()
+// Destructure für Template-Zugriff
+const { pixels } = matrixEditor
+const { currentAnimation, currentFrameIndex, isPlaying } = frameManager
+const { selectedDevice, isDeviceOnline } = deviceUpload
+const { handleAnimationGenerated, handleImageGenerated, handleDirectImageUpload, handleCroppedImage, initializeEmptyAnimation, resetAll } = animationHandlers
 
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
 
-// Initialize with empty/dark pixels
-const pixels = ref<string[][]>(
-  Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
-)
-
 // Initialisiere mit einer leeren Animation (ein Frame)
 onMounted(() => {
-  if (!currentAnimation.value) {
-    currentAnimation.value = {
-      description: 'Manuelle Animation',
-      loop: true,
-      frames: [{
-        pixels: pixels.value,
-        duration: 1000
-      }]
-    }
-  }
+  initializeEmptyAnimation()
 })
 
-const handleCroppedImage = (imageData: string[][]) => {
-  stopAnimation()
-  pixels.value = imageData
-  sendToESP8266()
-}
-
-const handleDirectImageUpload = async (matrix: string[][]) => {
-  // Stoppe Animation und aktualisiere aktuellen Frame
-  stopAnimation()
-  pixels.value = matrix
-  
-  // Aktualisiere aktuellen Frame in der Animation
-  if (currentAnimation.value) {
-    currentAnimation.value.frames[currentFrameIndex.value] = {
-      pixels: matrix,
-      duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
-    }
-  }
-  
-  // Wenn ESP8266 verbunden und online, direkt hochladen
-  if (selectedDevice.value && isDeviceOnline.value) {
-    try {
-      // Transformiere Matrix für physische LED-Anordnung
-      const transformedMatrix = transformForPhysicalMatrix(matrix)
-      
-      // Erstelle ein einzelnes Frame aus der transformierten Matrix
-      const frames = [{
-        pixels: transformedMatrix,
-        duration: 1000
-      }]
-      
-      await uploadFramesToDevice(selectedDevice.value.ip, frames)
-      alert('✅ Bild erfolgreich auf ESP8266 geladen!')
-    } catch (error) {
-      console.error('Upload failed:', error)
-      alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
-    }
-  } else if (selectedDevice.value && !isDeviceOnline.value) {
-    alert('⚠️ ESP8266 ist nicht erreichbar. Bild wurde nur lokal geladen.')
-  } else {
-    alert('ℹ️ Kein ESP8266 verbunden. Bild wurde nur lokal geladen.')
-  }
-}
+// Handler werden aus animationHandlers Composable verwendet
 
 const openDirectImageUpload = () => {
   directImageUploadRef.value?.openModal()
 }
 
 const resetMatrix = () => {
-  // Reset zur initialen leeren Animation
-  const emptyPixels = Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
-  pixels.value = emptyPixels
-  
-  currentAnimation.value = {
-    description: 'Manuelle Animation',
-    loop: true,
-    frames: [{
-      pixels: emptyPixels,
-      duration: 1000
-    }]
-  }
-  
-  currentFrameIndex.value = 0
-  stopAnimation()
-  sendToESP8266()
+  resetAll()
 }
 
-// Wrapper-Funktionen für Event-Handler
+// Wrapper-Funktionen für Event-Handler mit Pixel-Update
 const handleTogglePlayPause = () => {
-  togglePlayPause((framePixels) => {
-    pixels.value = framePixels
+  frameManager.togglePlayPause((framePixels) => {
+    matrixEditor.setPixels(framePixels)
   })
 }
 
 const handleGoToFrame = (frameIndex: number) => {
-  goToFrame(frameIndex, (framePixels) => {
-    pixels.value = framePixels
+  frameManager.goToFrame(frameIndex, (framePixels) => {
+    matrixEditor.setPixels(framePixels)
   })
 }
 
 const handleAddFrame = () => {
-  addFrame((framePixels) => {
-    pixels.value = framePixels
+  frameManager.addFrame((framePixels) => {
+    matrixEditor.setPixels(framePixels)
   })
 }
 
 const handleDeleteFrame = () => {
-  deleteFrame((framePixels) => {
-    pixels.value = framePixels
+  frameManager.deleteFrame((framePixels) => {
+    matrixEditor.setPixels(framePixels)
   })
-}
-
-const handleAnimationGenerated = (animation: LEDAnimation) => {
-  // AI-Generierung ersetzt vorhandene Frames komplett
-  setAnimation(animation, (framePixels) => {
-    pixels.value = framePixels
-  })
-  
-  // Starte Animation automatisch
-  playAnimation((framePixels) => {
-    pixels.value = framePixels
-  })
-}
-
-const handleImageGenerated = async (imageUrl: string) => {
-  // Stoppe alte Animation
-  resetAnimation()
-  
-  try {
-    // Lade das Bild und rastere es auf 16x16
-    const { quantizeImage } = useImageQuantizer()
-    
-    // Konvertiere die URL zu einem verwendbaren Format
-    const response = await fetch(imageUrl)
-    const blob = await response.blob()
-    const reader = new FileReader()
-    
-    reader.onload = async (e) => {
-      const imageData = e.target?.result as string
-      const matrix = await quantizeImage(imageData)
-      
-      if (matrix) {
-        pixels.value = matrix
-        
-        // Wenn ESP8266 verbunden und online, direkt hochladen
-        if (selectedDevice.value && isDeviceOnline.value) {
-          try {
-            // Transformiere Matrix für physische LED-Anordnung
-            const transformedMatrix = transformForPhysicalMatrix(matrix)
-            
-            const frames = [{
-              pixels: transformedMatrix,
-              duration: 1000
-            }]
-            
-            await uploadFramesToDevice(selectedDevice.value.ip, frames)
-            console.log('✅ AI-generiertes Bild erfolgreich auf ESP8266 geladen!')
-          } catch (error) {
-            console.error('Upload failed:', error)
-          }
-        }
-      }
-    }
-    
-    reader.readAsDataURL(blob)
-  } catch (error) {
-    console.error('Fehler beim Rastern des Bildes:', error)
-    alert('Fehler beim Verarbeiten des generierten Bildes')
-  }
 }
 
 
@@ -209,60 +71,20 @@ const sendToESP8266 = () => {
   // Frames werden beim "Frames hochladen" Button im ESP8266 Modal gesendet
 }
 
-// Watch for manual pixel changes and send to ESP8266
-watch(() => pixels.value, () => {
-  sendToESP8266()
-}, { deep: true })
-
 // Upload frames to ESP8266 via network
-const uploadFramesToESP = async (deviceIp: string) => {
+const uploadFramesToESP = async () => {
   if (!currentAnimation.value) {
     alert('Keine Animation vorhanden!')
     return
   }
-
-  try {
-    const { compressAnimation } = useFrameCompression()
-    
-    // Konvertiere Animation zu Binär-Format mit Transformation
-    const animation = {
-      description: currentAnimation.value.description || 'Custom Animation',
-      loop: currentAnimation.value.loop !== false, // Default: true
-      frames: currentAnimation.value.frames.map(frame => ({
-        pixels: transformForPhysicalMatrix(frame.pixels), // Transformiere für physische Matrix
-        duration: frame.duration,
-      }))
-    }
-    
-    // Komprimiere zu Binär
-    const binaryData = compressAnimation(animation)
-    console.log(`📦 Uploading: ${binaryData.length} bytes (binary)`)
-    console.log(`📦 Frames: ${animation.frames.length}`)
-    
-    // Konvertiere zu Blob
-    const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
-
-    const response = await fetch(`http://${deviceIp}/frames`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-      },
-      body: blob,
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`HTTP ${response.status}:`, errorText)
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    const result = await response.json()
-    alert(`✓ Frames erfolgreich hochgeladen!\n${result.frameCount || animation.frames.length} Frames auf ESP8266 gespeichert.`)
-  } catch (error) {
-    console.error('Upload failed:', error)
-    alert('❌ Upload fehlgeschlagen! Prüfe die Verbindung zum ESP8266.')
-  }
+  
+  await deviceUpload.uploadAnimation(currentAnimation.value)
 }
+
+// Watch for manual pixel changes and send to ESP8266
+watch(() => pixels.value, () => {
+  // Removed sendToESP8266() call
+}, { deep: true })
 
 // Starte Health-Check wenn ein Gerät ausgewählt ist
 onMounted(() => {
@@ -283,7 +105,7 @@ watch(selectedDevice, (newDevice) => {
 
 // Cleanup on unmount
 onUnmounted(() => {
-  stopAnimation()
+  frameManager.stopAnimation()
   stopHealthCheck()
 })
 </script>
@@ -342,122 +164,22 @@ onUnmounted(() => {
         </div>
 
         <!-- Werkzeugleiste unter der Matrix -->
-        <div class="flex justify-center">
-          <div class="flex items-center gap-2 bg-gray-900/50 backdrop-blur-sm rounded-lg p-3 border border-gray-800/50 shadow-xl">
-            <!-- AI Prompt Button -->
-            <UButton
-              icon="i-heroicons-sparkles"
-              color="primary"
-              variant="soft"
-              size="lg"
-              @click="isAIPromptModalOpen = true"
-              title="AI Animation/Bild generieren"
-            />
-            
-            <!-- Bild Upload Button -->
-            <UButton
-              icon="i-heroicons-arrow-up-tray"
-              color="primary"
-              variant="soft"
-              size="lg"
-              @click="openDirectImageUpload"
-              title="Bild hochladen"
-            />
-            
-            <!-- Divider -->
-            <div class="h-8 w-px bg-gray-700"></div>
-            
-            <!-- Frame Management (immer sichtbar) -->
-            <template v-if="currentAnimation">
-              <!-- Delete Frame -->
-              <UButton
-                icon="i-heroicons-minus"
-                color="neutral"
-                variant="soft"
-                size="sm"
-                @click="handleDeleteFrame"
-                title="Frame löschen"
-                :disabled="currentAnimation.frames.length <= 1"
-              />
-              
-              <!-- Frame Slider & Info -->
-              <div class="flex items-center gap-2 px-2">
-                <span class="text-xs text-gray-400 whitespace-nowrap">{{ currentFrameIndex + 1 }}/{{ currentAnimation.frames.length }}</span>
-                <input
-                  v-model.number="currentFrameIndex"
-                  type="range"
-                  :min="0"
-                  :max="currentAnimation.frames.length - 1"
-                  class="w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                  @input="handleGoToFrame(currentFrameIndex)"
-                />
-              </div>
-              
-              <!-- Add Frame -->
-              <UButton
-                icon="i-heroicons-plus"
-                color="neutral"
-                variant="soft"
-                size="sm"
-                @click="handleAddFrame"
-                title="Frame hinzufügen"
-              />
-              
-              <!-- Divider -->
-              <div class="h-8 w-px bg-gray-700"></div>
-              
-              <!-- Play/Pause Button -->
-              <UButton
-                :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
-                color="primary"
-                variant="soft"
-                size="lg"
-                @click="handleTogglePlayPause"
-                :title="isPlaying ? 'Pause' : 'Play'"
-              />
-            </template>
-            
-            <!-- Reset Button -->
-            <UButton
-              icon="i-heroicons-arrow-path"
-              color="neutral"
-              variant="soft"
-              size="lg"
-              @click="resetMatrix"
-              title="Matrix zurücksetzen"
-            />
-            
-            <!-- Divider -->
-            <div class="h-8 w-px bg-gray-700"></div>
-            
-            <!-- Upload to ESP8266 Button -->
-            <UButton
-              v-if="selectedDevice && isDeviceOnline"
-              icon="i-heroicons-arrow-up-tray"
-              color="success"
-              size="lg"
-              @click="uploadFramesToESP(selectedDevice.ip)"
-              title="An ESP8266 senden"
-            />
-            <UButton
-              v-else-if="selectedDevice && !isDeviceOnline"
-              icon="i-heroicons-arrow-up-tray"
-              color="neutral"
-              size="lg"
-              disabled
-              title="Gerät offline"
-            />
-            <UButton
-              v-else
-              icon="i-heroicons-cpu-chip"
-              color="neutral"
-              variant="soft"
-              size="lg"
-              @click="isESP8266SetupOpen = true"
-              title="ESP8266 einrichten"
-            />
-          </div>
-        </div>
+        <MatrixToolbar
+          :current-animation="currentAnimation"
+          v-model:current-frame-index="currentFrameIndex"
+          :is-playing="isPlaying"
+          :selected-device="selectedDevice"
+          :is-device-online="isDeviceOnline"
+          @open-ai-prompt="isAIPromptModalOpen = true"
+          @open-image-upload="openDirectImageUpload"
+          @delete-frame="handleDeleteFrame"
+          @go-to-frame="handleGoToFrame"
+          @add-frame="handleAddFrame"
+          @toggle-play-pause="handleTogglePlayPause"
+          @reset-matrix="resetMatrix"
+          @upload-to-device="uploadFramesToESP"
+          @open-device-setup="isESP8266SetupOpen = true"
+        />
 
       </div>
     </UContainer>
