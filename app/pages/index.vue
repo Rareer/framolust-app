@@ -4,6 +4,7 @@ import type { LEDAnimation } from '~/composables/useOpenAI'
 
 const isApiKeyModalOpen = ref(false)
 const isESP8266SetupOpen = ref(false)
+const isAIPromptModalOpen = ref(false)
 const directImageUploadRef = ref<{ openModal: () => void } | null>(null)
 
 // ESP8266 Network Integration
@@ -11,6 +12,21 @@ const { uploadFramesToDevice, selectedDevice, isDeviceOnline, startHealthCheck, 
 
 // Matrix Transformation
 const { transformForPhysicalMatrix } = useMatrixTransform()
+
+// Frame Manager
+const {
+  currentAnimation,
+  currentFrameIndex,
+  isPlaying,
+  playAnimation,
+  stopAnimation,
+  togglePlayPause,
+  goToFrame,
+  addFrame,
+  deleteFrame,
+  setAnimation,
+  resetAnimation
+} = useFrameManager()
 
 // ESP8266 Status für Anzeige
 const esp8266Status = computed(() => selectedDevice.value)
@@ -20,10 +36,19 @@ const pixels = ref<string[][]>(
   Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
 )
 
-const currentAnimation = ref<LEDAnimation | null>(null)
-const currentFrameIndex = ref(0)
-const isPlaying = ref(false)
-const animationInterval = ref<NodeJS.Timeout | null>(null)
+// Initialisiere mit einer leeren Animation (ein Frame)
+onMounted(() => {
+  if (!currentAnimation.value) {
+    currentAnimation.value = {
+      description: 'Manuelle Animation',
+      loop: true,
+      frames: [{
+        pixels: pixels.value,
+        duration: 1000
+      }]
+    }
+  }
+})
 
 const handleCroppedImage = (imageData: string[][]) => {
   stopAnimation()
@@ -32,10 +57,17 @@ const handleCroppedImage = (imageData: string[][]) => {
 }
 
 const handleDirectImageUpload = async (matrix: string[][]) => {
-  // Stoppe Animation und setze Matrix
+  // Stoppe Animation und aktualisiere aktuellen Frame
   stopAnimation()
-  currentAnimation.value = null
   pixels.value = matrix
+  
+  // Aktualisiere aktuellen Frame in der Animation
+  if (currentAnimation.value) {
+    currentAnimation.value.frames[currentFrameIndex.value] = {
+      pixels: matrix,
+      duration: currentAnimation.value.frames[currentFrameIndex.value]?.duration || 1000
+    }
+  }
   
   // Wenn ESP8266 verbunden und online, direkt hochladen
   if (selectedDevice.value && isDeviceOnline.value) {
@@ -46,7 +78,7 @@ const handleDirectImageUpload = async (matrix: string[][]) => {
       // Erstelle ein einzelnes Frame aus der transformierten Matrix
       const frames = [{
         pixels: transformedMatrix,
-        duration: 1000 // Statisches Bild, Dauer irrelevant
+        duration: 1000
       }]
       
       await uploadFramesToDevice(selectedDevice.value.ip, frames)
@@ -67,27 +99,64 @@ const openDirectImageUpload = () => {
 }
 
 const resetMatrix = () => {
+  // Reset zur initialen leeren Animation
+  const emptyPixels = Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
+  pixels.value = emptyPixels
+  
+  currentAnimation.value = {
+    description: 'Manuelle Animation',
+    loop: true,
+    frames: [{
+      pixels: emptyPixels,
+      duration: 1000
+    }]
+  }
+  
+  currentFrameIndex.value = 0
   stopAnimation()
-  pixels.value = Array(16).fill(null).map(() => Array(16).fill('#1a1a1a'))
   sendToESP8266()
 }
 
+// Wrapper-Funktionen für Event-Handler
+const handleTogglePlayPause = () => {
+  togglePlayPause((framePixels) => {
+    pixels.value = framePixels
+  })
+}
+
+const handleGoToFrame = (frameIndex: number) => {
+  goToFrame(frameIndex, (framePixels) => {
+    pixels.value = framePixels
+  })
+}
+
+const handleAddFrame = () => {
+  addFrame((framePixels) => {
+    pixels.value = framePixels
+  })
+}
+
+const handleDeleteFrame = () => {
+  deleteFrame((framePixels) => {
+    pixels.value = framePixels
+  })
+}
+
 const handleAnimationGenerated = (animation: LEDAnimation) => {
-  // Stoppe alte Animation
-  stopAnimation()
+  // AI-Generierung ersetzt vorhandene Frames komplett
+  setAnimation(animation, (framePixels) => {
+    pixels.value = framePixels
+  })
   
-  // Setze neue Animation
-  currentAnimation.value = animation
-  currentFrameIndex.value = 0
-  
-  // Starte neue Animation
-  playAnimation()
+  // Starte Animation automatisch
+  playAnimation((framePixels) => {
+    pixels.value = framePixels
+  })
 }
 
 const handleImageGenerated = async (imageUrl: string) => {
   // Stoppe alte Animation
-  stopAnimation()
-  currentAnimation.value = null
+  resetAnimation()
   
   try {
     // Lade das Bild und rastere es auf 16x16
@@ -132,52 +201,6 @@ const handleImageGenerated = async (imageUrl: string) => {
   }
 }
 
-const playAnimation = () => {
-  if (!currentAnimation.value || isPlaying.value) return
-  
-  isPlaying.value = true
-  showFrame(0)
-}
-
-const stopAnimation = () => {
-  isPlaying.value = false
-  if (animationInterval.value) {
-    clearTimeout(animationInterval.value)
-    animationInterval.value = null
-  }
-}
-
-const showFrame = (frameIndex: number) => {
-  if (!currentAnimation.value || !isPlaying.value) return
-  
-  const frame = currentAnimation.value.frames[frameIndex]
-  if (!frame) return
-  
-  pixels.value = frame.pixels
-  currentFrameIndex.value = frameIndex
-  sendToESP8266()
-  
-  // Schedule next frame
-  animationInterval.value = setTimeout(() => {
-    const nextIndex = (frameIndex + 1) % currentAnimation.value!.frames.length
-    
-    // Stop if not looping and reached the end
-    if (!currentAnimation.value!.loop && nextIndex === 0) {
-      isPlaying.value = false
-      return
-    }
-    
-    showFrame(nextIndex)
-  }, frame.duration)
-}
-
-const togglePlayPause = () => {
-  if (isPlaying.value) {
-    stopAnimation()
-  } else {
-    playAnimation()
-  }
-}
 
 // Send current matrix to ESP8266 (via HTTP)
 const sendToESP8266 = () => {
@@ -267,8 +290,8 @@ onUnmounted(() => {
 
 <template>
   <div class="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black">
-    <UContainer class="py-12 max-w-3xl">
-      <div class="max-w-4xl mx-auto space-y-10">
+    <UContainer class="py-12 max-w-6xl">
+      <div class="max-w-6xl mx-auto space-y-10">
         <!-- Header with Cinema Style -->
         <div class="relative">
           <div class="text-center space-y-3">
@@ -278,16 +301,22 @@ onUnmounted(() => {
             <div class="h-1 w-32 mx-auto bg-gradient-to-r from-transparent via-indigo-500 to-transparent rounded-full"></div>
           </div>
           
-          <!-- API Key & ESP8266 Setup Buttons - Top Right -->
-          <div class="absolute top-0 right-0 flex gap-2">
-            <UButton
-              icon="i-heroicons-arrow-up-tray"
-              color="primary"
-              variant="soft"
-              size="lg"
-              @click="openDirectImageUpload"
-              title="Bild direkt auf Matrix laden"
-            />
+          <!-- Status & Settings - Top Right -->
+          <div class="absolute top-0 right-0 flex items-center gap-3">
+            <!-- Online Status Indicator -->
+            <div v-if="esp8266Status && isDeviceOnline" class="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg" :title="`${esp8266Status.deviceName} (${esp8266Status.ip})`">
+              <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <UIcon name="i-heroicons-wifi" class="w-5 h-5 text-green-400" />
+            </div>
+            <div v-else-if="esp8266Status && !isDeviceOnline" class="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg" :title="`${esp8266Status.deviceName} nicht erreichbar`">
+              <div class="w-2 h-2 bg-orange-400 rounded-full"></div>
+              <UIcon name="i-heroicons-wifi" class="w-5 h-5 text-orange-400" />
+            </div>
+            <div v-else class="flex items-center gap-2 px-3 py-2 bg-gray-500/10 border border-gray-500/20 rounded-lg" title="Kein Gerät verbunden">
+              <UIcon name="i-heroicons-wifi" class="w-5 h-5 text-gray-400" />
+            </div>
+            
+            <!-- Settings Buttons -->
             <UButton
               icon="i-heroicons-cpu-chip"
               color="success"
@@ -312,39 +341,83 @@ onUnmounted(() => {
           <LedMatrix :pixels="pixels" />
         </div>
 
-        <!-- ESP8266 Status -->
+        <!-- Werkzeugleiste unter der Matrix -->
         <div class="flex justify-center">
-          <div v-if="esp8266Status && isDeviceOnline" class="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span class="text-sm font-medium text-green-400">ESP8266 online: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
-          </div>
-          <div v-else-if="esp8266Status && !isDeviceOnline" class="flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-lg">
-            <div class="w-2 h-2 bg-orange-400 rounded-full"></div>
-            <span class="text-sm font-medium text-orange-400">ESP8266 nicht erreichbar: {{ esp8266Status.deviceName }} ({{ esp8266Status.ip }})</span>
-          </div>
-          <div v-else class="flex items-center gap-2 px-4 py-2 bg-gray-500/10 border border-gray-500/20 rounded-lg">
-            <div class="w-2 h-2 bg-gray-400 rounded-full"></div>
-            <span class="text-sm font-medium text-gray-400">Kein ESP8266 verbunden - Klicke auf 🖥️ ESP8266 zum Einrichten</span>
-          </div>
-        </div>
-
-        <!-- Controls: Prompt Input + Animation Controls -->
-        <div class="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 border border-gray-800/50 shadow-xl space-y-3">
-          <div class="flex items-center gap-3">
-            <AnimationPrompt 
-              @animation-generated="handleAnimationGenerated" 
-              @image-generated="handleImageGenerated"
-              class="flex-1" 
-            />
+          <div class="flex items-center gap-2 bg-gray-900/50 backdrop-blur-sm rounded-lg p-3 border border-gray-800/50 shadow-xl">
+            <!-- AI Prompt Button -->
             <UButton
-              v-if="currentAnimation"
-              :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+              icon="i-heroicons-sparkles"
               color="primary"
               variant="soft"
               size="lg"
-              @click="togglePlayPause"
-              :title="isPlaying ? 'Pause' : 'Play'"
+              @click="isAIPromptModalOpen = true"
+              title="AI Animation/Bild generieren"
             />
+            
+            <!-- Bild Upload Button -->
+            <UButton
+              icon="i-heroicons-arrow-up-tray"
+              color="primary"
+              variant="soft"
+              size="lg"
+              @click="openDirectImageUpload"
+              title="Bild hochladen"
+            />
+            
+            <!-- Divider -->
+            <div class="h-8 w-px bg-gray-700"></div>
+            
+            <!-- Frame Management (immer sichtbar) -->
+            <template v-if="currentAnimation">
+              <!-- Delete Frame -->
+              <UButton
+                icon="i-heroicons-minus"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                @click="handleDeleteFrame"
+                title="Frame löschen"
+                :disabled="currentAnimation.frames.length <= 1"
+              />
+              
+              <!-- Frame Slider & Info -->
+              <div class="flex items-center gap-2 px-2">
+                <span class="text-xs text-gray-400 whitespace-nowrap">{{ currentFrameIndex + 1 }}/{{ currentAnimation.frames.length }}</span>
+                <input
+                  v-model.number="currentFrameIndex"
+                  type="range"
+                  :min="0"
+                  :max="currentAnimation.frames.length - 1"
+                  class="w-32 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                  @input="handleGoToFrame(currentFrameIndex)"
+                />
+              </div>
+              
+              <!-- Add Frame -->
+              <UButton
+                icon="i-heroicons-plus"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                @click="handleAddFrame"
+                title="Frame hinzufügen"
+              />
+              
+              <!-- Divider -->
+              <div class="h-8 w-px bg-gray-700"></div>
+              
+              <!-- Play/Pause Button -->
+              <UButton
+                :icon="isPlaying ? 'i-heroicons-pause' : 'i-heroicons-play'"
+                color="primary"
+                variant="soft"
+                size="lg"
+                @click="handleTogglePlayPause"
+                :title="isPlaying ? 'Pause' : 'Play'"
+              />
+            </template>
+            
+            <!-- Reset Button -->
             <UButton
               icon="i-heroicons-arrow-path"
               color="neutral"
@@ -353,52 +426,39 @@ onUnmounted(() => {
               @click="resetMatrix"
               title="Matrix zurücksetzen"
             />
-          </div>
-          
-          <!-- Send to ESP8266 Button -->
-          <div v-if="currentAnimation && selectedDevice && isDeviceOnline" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
-            <div class="flex-1 text-sm text-gray-400">
-              <span class="font-medium text-green-400">{{ selectedDevice.deviceName }}</span> bereit
-            </div>
+            
+            <!-- Divider -->
+            <div class="h-8 w-px bg-gray-700"></div>
+            
+            <!-- Upload to ESP8266 Button -->
             <UButton
+              v-if="selectedDevice && isDeviceOnline"
               icon="i-heroicons-arrow-up-tray"
               color="success"
               size="lg"
               @click="uploadFramesToESP(selectedDevice.ip)"
-              label="An ESP8266 senden"
+              title="An ESP8266 senden"
             />
-          </div>
-          <div v-else-if="currentAnimation && selectedDevice && !isDeviceOnline" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
-            <div class="flex-1 text-sm text-orange-400">
-              <span class="font-medium">{{ selectedDevice.deviceName }}</span> nicht erreichbar
-            </div>
             <UButton
+              v-else-if="selectedDevice && !isDeviceOnline"
               icon="i-heroicons-arrow-up-tray"
               color="neutral"
               size="lg"
               disabled
-              label="Gerät offline"
+              title="Gerät offline"
             />
-          </div>
-          <div v-else-if="currentAnimation && !selectedDevice" class="flex items-center gap-3 pt-2 border-t border-gray-700/50">
-            <div class="flex-1 text-sm text-gray-400">
-              Kein ESP8266 verbunden
-            </div>
             <UButton
+              v-else
               icon="i-heroicons-cpu-chip"
               color="neutral"
               variant="soft"
               size="lg"
               @click="isESP8266SetupOpen = true"
-              label="ESP8266 einrichten"
+              title="ESP8266 einrichten"
             />
           </div>
         </div>
 
-        <!-- Arduino Code Generator -->
-        <div class="flex justify-center">
-          <ArduinoCodeGenerator :animation="currentAnimation" :pixels="pixels" />
-        </div>
       </div>
     </UContainer>
     
@@ -416,6 +476,30 @@ onUnmounted(() => {
       ref="directImageUploadRef"
       @image-uploaded="handleDirectImageUpload"
     />
+
+    <!-- AI Prompt Modal -->
+    <UModal v-model:open="isAIPromptModalOpen">
+      <template #header>
+        <div class="flex items-center gap-3">
+          <div class="p-2 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+            <UIcon name="i-heroicons-sparkles" class="w-6 h-6 text-indigo-400" />
+          </div>
+          <div>
+            <h3 class="text-xl font-bold">AI Animation/Bild generieren</h3>
+            <p class="text-sm text-gray-500 mt-1">Erstelle Animationen oder Bilder mit KI</p>
+          </div>
+        </div>
+      </template>
+      
+      <template #body>
+        <div class="space-y-4">
+          <AnimationPrompt 
+            @animation-generated="handleAnimationGenerated; isAIPromptModalOpen = false" 
+            @image-generated="handleImageGenerated; isAIPromptModalOpen = false"
+          />
+        </div>
+      </template>
+    </UModal>
 
     <!-- ESP8266 Setup Modal -->
     <UModal v-model:open="isESP8266SetupOpen">
