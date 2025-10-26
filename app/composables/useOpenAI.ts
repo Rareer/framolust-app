@@ -201,7 +201,6 @@ Wichtig:
 
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
-      console.error('OpenAI Image API Error:', err)
       return null
     } finally {
       isLoading.value = false

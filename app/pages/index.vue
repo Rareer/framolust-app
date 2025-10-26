@@ -32,7 +32,24 @@ onMounted(() => {
   initializeEmptyAnimation()
 })
 
-// Handler werden aus animationHandlers Composable verwendet
+// Wrapper für AI-Event-Handler mit Modal-Schließung
+const handleAIAnimationGenerated = async (animation: LEDAnimation) => {
+  try {
+    await handleAnimationGenerated(animation)
+    isAIPromptModalOpen.value = false
+  } catch (error) {
+    console.error('Fehler in handleAIAnimationGenerated:', error)
+  }
+}
+
+const handleAIImageGenerated = async (imageUrl: string) => {
+  try {
+    await handleImageGenerated(imageUrl)
+    isAIPromptModalOpen.value = false
+  } catch (error) {
+    console.error('Fehler in handleAIImageGenerated:', error)
+  }
+}
 
 const openDirectImageUpload = () => {
   directImageUploadRef.value?.openModal()
@@ -407,8 +424,8 @@ onUnmounted(() => {
       <template #body>
         <div class="space-y-4">
           <AnimationPrompt 
-            @animation-generated="handleAnimationGenerated; isAIPromptModalOpen = false" 
-            @image-generated="handleImageGenerated; isAIPromptModalOpen = false"
+            @animation-generated="handleAIAnimationGenerated" 
+            @image-generated="handleAIImageGenerated"
           />
         </div>
       </template>
