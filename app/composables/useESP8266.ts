@@ -60,6 +60,16 @@ if (process.client) {
 }
 
 export const useESP8266 = () => {
+  // Build device URL, using server-side proxy when app is served over HTTPS
+  const buildDeviceUrl = (ip: string, path: string) => {
+    const normalized = path.startsWith('/') ? path : `/${path}`
+    if (process.client && window.location.protocol === 'https:') {
+      // Use Nuxt server API proxy to avoid HTTPS→HTTP mixed content and PNA
+      const qs = new URLSearchParams({ ip, path: normalized }).toString()
+      return `/api/device-proxy?${qs}`
+    }
+    return `http://${ip}${normalized}`
+  }
 
   /**
    * Ping ein Gerät um zu prüfen ob es erreichbar ist
@@ -69,10 +79,10 @@ export const useESP8266 = () => {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeout)
       
-      const response = await fetch(`http://${ip}/api/info`, {
+      const response = await fetch(buildDeviceUrl(ip, '/api/info'), {
         method: 'GET',
         signal: controller.signal,
-        mode: 'cors',
+        // proxy is same-origin; no CORS mode needed
       })
       
       clearTimeout(timeoutId)
@@ -156,10 +166,8 @@ export const useESP8266 = () => {
             // Timeout für jeden Request
             const controller = new AbortController()
             const timeoutId = setTimeout(() => controller.abort(), 1500) // 1.5s timeout
-            
-            const response = await fetch(`http://${ip}/api/info`, {
+              const response = await fetch(buildDeviceUrl(ip, '/api/info'), {
               signal: controller.signal,
-              mode: 'cors',
             })
             
             clearTimeout(timeoutId)
@@ -205,6 +213,33 @@ export const useESP8266 = () => {
     } finally {
       isScanning.value = false
     }
+  }
+
+  /**
+   * Auto-Scan über gängige lokale Subnetze
+   * Versucht nacheinander, bis Geräte gefunden werden oder Liste erschöpft ist.
+   */
+  const scanForDevicesAuto = async () => {
+    // Kandidatenliste (häufige Heimnetzbereiche)
+    const candidates = Array.from(new Set([
+      '192.168.178', // FritzBox
+      '192.168.1',
+      '192.168.0',
+      '10.0.0',
+      '10.1.1',
+    ]))
+
+    let allFound: ESP8266Device[] = []
+    for (const subnet of candidates) {
+      console.log(`[Auto-Scan] Trying subnet ${subnet}.x ...`)
+      const found = await scanForDevices(subnet)
+      allFound = found
+      if (found.length > 0) {
+        console.log(`[Auto-Scan] Found ${found.length} device(s) in ${subnet}.x, stopping.`)
+        break
+      }
+    }
+    return allFound
   }
 
   /**
@@ -332,12 +367,10 @@ export const useESP8266 = () => {
       // WICHTIG: Verwende fetch statt $fetch für binäre Daten
       // Konvertiere Uint8Array zu Blob für fetch
       const blob = new Blob([binaryData.buffer as ArrayBuffer], { type: 'application/octet-stream' })
-      
-      const fetchResponse = await fetch(`http://${deviceIp}/frames`, {
+
+      const fetchResponse = await fetch(buildDeviceUrl(deviceIp, '/frames'), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-        },
+        headers: { 'Content-Type': 'application/octet-stream' },
         body: blob,
       })
       
@@ -373,7 +406,7 @@ export const useESP8266 = () => {
   const getFramesFromDevice = async (deviceIp: string) => {
     try {
       // Hole binäre Daten vom ESP8266
-      const response = await fetch(`http://${deviceIp}/frames`, {
+      const response = await fetch(buildDeviceUrl(deviceIp, '/frames'), {
         method: 'GET',
       })
 
@@ -625,6 +658,7 @@ export const useESP8266 = () => {
   }
 
   return {
+    // state
     devices,
     selectedDevice,
     isScanning,
@@ -632,23 +666,24 @@ export const useESP8266 = () => {
     uploadProgress,
     isDeviceOnline,
     lastPingTime,
-    pingDevice,
+
+    // methods
+    scanForDevices,
+    scanForDevicesAuto,
+    connectToDevice,
+    clearFramesOnDevice,
+    renameDevice,
+    saveKnownDevices,
+    loadKnownDevices,
     startHealthCheck,
     stopHealthCheck,
-    scanForDevices,
-    connectToDevice,
-    checkFramoluxFirmware,
-    checkDeviceStatus,
+    pingDevice,
     uploadFramesToDevice,
     getFramesFromDevice,
     loadFramesFromDevice,
-    clearFramesOnDevice,
-    renameDevice,
+    sendTestFrame,
     generateBuildCommand,
     saveWiFiConfig,
     loadWiFiConfig,
-    saveKnownDevices,
-    loadKnownDevices,
-    sendTestFrame,
   }
 }

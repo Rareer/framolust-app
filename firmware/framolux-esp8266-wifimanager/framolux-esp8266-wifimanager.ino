@@ -383,6 +383,7 @@ void setupRoutes() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Allow-Private-Network", "true");
     server.sendHeader("Access-Control-Max-Age", "86400");
     server.send(204);
   });
@@ -392,6 +393,7 @@ void setupRoutes() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "PUT, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Allow-Private-Network", "true");
     server.sendHeader("Access-Control-Max-Age", "86400");
     server.send(204);
   });
@@ -401,6 +403,7 @@ void setupRoutes() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    server.sendHeader("Access-Control-Allow-Private-Network", "true");
     server.sendHeader("Access-Control-Max-Age", "86400");
     server.send(204);
   });
@@ -459,6 +462,7 @@ void setupRoutes() {
       server.sendHeader("Access-Control-Allow-Origin", "*");
       server.sendHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
       server.sendHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      server.sendHeader("Access-Control-Allow-Private-Network", "true");
       server.sendHeader("Access-Control-Max-Age", "86400");
       server.send(204);
     } else {
@@ -501,6 +505,7 @@ void handleRoot() {
  */
 void handleStatus() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   StaticJsonDocument<256> doc;
   doc["status"] = "online";
@@ -521,6 +526,7 @@ void handleStatus() {
  */
 void handleInfo() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   StaticJsonDocument<400> doc;
   doc["firmware"] = "framolux";  // Identifier für Framolux Firmware
@@ -549,6 +555,7 @@ void handleUploadFrames() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   Serial.println("=== POST /frames ===");
   Serial.println("Content-Type: " + server.header("Content-Type"));
@@ -683,6 +690,7 @@ void handleUploadFrames() {
  */
 void handleGetFrames() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   File file = LittleFS.open(FRAME_FILE, "r");
   if (!file) {
@@ -719,6 +727,7 @@ void handleGetFrames() {
  */
 void handleClearFrames() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   if (LittleFS.remove(FRAME_FILE)) {
     frameCount = 0;
@@ -734,6 +743,7 @@ void handleClearFrames() {
  */
 void handleUpdateConfig() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Private-Network", "true");
   
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"No data received\"}");

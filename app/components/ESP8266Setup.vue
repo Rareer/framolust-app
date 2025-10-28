@@ -189,6 +189,7 @@ const {
   isUploading,
   uploadProgress,
   scanForDevices,
+  scanForDevicesAuto,
   connectToDevice,
   clearFramesOnDevice,
   renameDevice,
@@ -212,8 +213,24 @@ onMounted(() => {
 })
 
 const scanDevices = async () => {
-  console.log('Scanning subnet:', scanSubnet.value)
-  await scanForDevices(scanSubnet.value)
+  // Guard: Scannen nur im lokalen Kontext sinnvoll
+  if (process.client) {
+    const host = window.location.hostname
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1'
+    const isPrivateIp = /^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+    if (window.location.protocol === 'https:' && !(isLocalHost || isPrivateIp)) {
+      alert('Gerätesuche ist nur im lokalen Netzwerk möglich. Bitte die App lokal öffnen (http://localhost) oder IP manuell eingeben.')
+      return
+    }
+  }
+
+  console.log('Auto scanning common local subnets...')
+  const found = await scanForDevicesAuto()
+  if (found.length === 0) {
+    // Fallback: benutzerdefiniertes Subnetz versuchen
+    console.log('No devices found via auto-scan. Scanning user-provided subnet:', scanSubnet.value)
+    await scanForDevices(scanSubnet.value)
+  }
 }
 
 const connectManually = async () => {
