@@ -9,6 +9,10 @@ export const useFrameManager = () => {
   const currentFrameIndex = ref(0)
   const isPlaying = ref(false)
   const animationInterval = ref<NodeJS.Timeout | null>(null)
+  
+  // Enforce global FPS for preview
+  const TARGET_FPS = 15
+  const FRAME_INTERVAL_MS = Math.round(1000 / TARGET_FPS) // ~67ms
 
   /**
    * Startet die Animation
@@ -54,7 +58,7 @@ export const useFrameManager = () => {
       }
       
       showFrame(nextIndex, onFrameUpdate)
-    }, frame.duration)
+    }, FRAME_INTERVAL_MS)
   }
 
   /**

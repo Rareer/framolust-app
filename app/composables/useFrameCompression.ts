@@ -42,6 +42,54 @@ export const useFrameCompression = () => {
   }
   
   /**
+   * Rotiere Pixel-Matrix um 90° im Uhrzeigersinn
+   */
+  const rotateMatrix90CW = (matrix: string[][]): string[][] => {
+    const height = matrix.length
+    const width = matrix[0]?.length || 0
+    if (height === 0 || width === 0) return matrix
+    
+    const rotated: string[][] = Array(width).fill(null).map(() => Array(height).fill('#000000'))
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // 90° CW: (x, y) -> (x' = height - 1 - y, y' = x)
+        const pixel = matrix[y]?.[x] || '#000000'
+        const targetRow = rotated[x]
+        if (targetRow) {
+          targetRow[height - 1 - y] = pixel
+        }
+      }
+    }
+    
+    return rotated
+  }
+  
+  /**
+   * Rotiere Pixel-Matrix um 90° gegen den Uhrzeigersinn
+   */
+  const rotateMatrix90CCW = (matrix: string[][]): string[][] => {
+    const height = matrix.length
+    const width = matrix[0]?.length || 0
+    if (height === 0 || width === 0) return matrix
+    
+    const rotated: string[][] = Array(width).fill(null).map(() => Array(height).fill('#000000'))
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // 90° CCW: (x, y) -> (x' = y, y' = width - 1 - x)
+        const pixel = matrix[y]?.[x] || '#000000'
+        const targetRow = rotated[width - 1 - x]
+        if (targetRow) {
+          targetRow[y] = pixel
+        }
+      }
+    }
+    
+    return rotated
+  }
+  
+  /**
    * Konvertiere Hex-Farbe zu RGB-Bytes
    */
   const hexToRGB = (hex: string): [number, number, number] => {
@@ -236,8 +284,8 @@ export const useFrameCompression = () => {
           pixels.push(row)
         }
         
-        // Rotiere zurück um 180° (da beim Komprimieren gedreht wurde)
-        const rotatedPixels = rotateMatrix180(pixels)
+        // Korrigiere Orientierung: 90° gegen den Uhrzeigersinn beim Import
+        const rotatedPixels = rotateMatrix90CCW(pixels)
         
         frames.push({ pixels: rotatedPixels, duration })
       }

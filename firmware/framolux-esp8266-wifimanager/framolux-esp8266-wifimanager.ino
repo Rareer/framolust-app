@@ -38,6 +38,7 @@
 #define MATRIX_HEIGHT 16   // Höhe der LED Matrix (muss mit OpenAI Schema übereinstimmen!)
 #define NUM_LEDS (MATRIX_WIDTH * MATRIX_HEIGHT)  // = 256 LEDs
 #define BRIGHTNESS 50      // Helligkeit (0-255)
+#define TARGET_FPS 15      // Zielbildrate für die Wiedergabe
 #define WIFI_CONFIG_FILE "/wifi.json"
 
 ESP8266WebServer server(WEB_SERVER_PORT);
@@ -306,12 +307,16 @@ void updateFrameDisplay() {
     Serial.println("📦 Starting BINARY animation playback");
   }
   
+  // Zielintervall für gewünschte FPS
+  const uint32_t frameIntervalMs = 1000UL / TARGET_FPS; // ~66 ms bei 15 FPS
+  
   // Prüfe ob es Zeit ist, den Frame zu wechseln
   static unsigned long lastFrameLoad = 0;
   unsigned long now = millis();
   
   // Lade Frame nur wenn nötig (bei Frame-Wechsel)
-  if (now - lastFrameLoad > 100) { // Maximal alle 100ms neu laden
+  // Reload-Guard deutlich unter dem Zielintervall halten
+  if (now - lastFrameLoad >= (frameIntervalMs / 2)) {
     lastFrameLoad = now;
     
     File file = LittleFS.open(FRAME_FILE, "r");
@@ -320,7 +325,8 @@ void updateFrameDisplay() {
       return;
     }
     
-    uint32_t duration = 3000;
+    // Ignoriere Header-Duration und erzwinge Ziel-FPS
+    uint32_t duration = frameIntervalMs;
     
     // Lade binären Frame direkt
     if (!loadBinaryFrame(file, currentFrameIndex, duration)) {
@@ -330,8 +336,8 @@ void updateFrameDisplay() {
     
     file.close();
     
-    // Wechsle zum nächsten Frame nach Ablauf der Duration
-    if (now - frameStartTime > duration) {
+    // Wechsle zum nächsten Frame nach Ablauf der Ziel-Duration
+    if ((now - frameStartTime) >= frameIntervalMs) {
       currentFrameIndex++;
       if (currentFrameIndex >= frameCount) {
         currentFrameIndex = 0; // Loop
@@ -417,6 +423,28 @@ void setupRoutes() {
   // GET /info - Device Info
   server.on("/info", HTTP_GET, handleInfo);
   server.on("/api/info", HTTP_GET, handleInfo); // Alias für Discovery
+  
+  // Test-Endpunkte für LED-Diagnose
+  server.on("/test/solid", HTTP_GET, []() {
+    int r = server.hasArg("r") ? server.arg("r").toInt() : 0;
+    int g = server.hasArg("g") ? server.arg("g").toInt() : 0;
+    int b = server.hasArg("b") ? server.arg("b").toInt() : 0;
+    fill_solid(leds, NUM_LEDS, CRGB(r, g, b));
+    FastLED.show();
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", "{\"ok\":true}");
+  });
+  
+  server.on("/test/pixelwalk", HTTP_GET, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", "{\"ok\":true}");
+    for (int i = 0; i < NUM_LEDS; i++) {
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      leds[i] = CRGB::Red;
+      FastLED.show();
+      delay(20);
+    }
+  });
   
   // PUT /config - Update Device Config (Name ändern)
   server.on("/config", HTTP_PUT, handleUpdateConfig);
@@ -535,9 +563,17 @@ void handleUploadFrames() {
     return;
   }
   
-  // Hole die Daten als String (enthält aber binäre Daten)
+  // Hole die Daten als String (enthält binäre Daten)
   String body = server.arg("plain");
   size_t dataSize = body.length();
+  // Zusätzliche Diagnose: Content-Length vergleichen
+  size_t contentLen = 0;
+  if (server.hasHeader("Content-Length")) {
+    contentLen = server.header("Content-Length").toInt();
+  }
+  if (contentLen > 0 && contentLen != dataSize) {
+    Serial.println("WARNING: Content-Length != body.length() -> " + String(contentLen) + " vs " + String(dataSize));
+  }
   
   Serial.println("Received data: " + String(dataSize) + " bytes");
   
@@ -610,6 +646,17 @@ void handleUploadFrames() {
     return;
   }
   
+  // Prüfe gespeicherte Dateigröße zur Sicherheit
+  size_t storedSize = 0;
+  {
+    File rf = LittleFS.open(FRAME_FILE, "r");
+    if (rf) {
+      storedSize = rf.size();
+      rf.close();
+    }
+  }
+  Serial.println("Stored binary size: " + String(storedSize) + " bytes");
+  
   frameCount = animHeader.frameCount;
   
   StaticJsonDocument<200> response;
@@ -617,6 +664,7 @@ void handleUploadFrames() {
   response["frameCount"] = frameCount;
   response["message"] = "Frames saved successfully (Binary)";
   response["bytesWritten"] = written;
+  response["storedSize"] = storedSize;
   response["compression"] = "binary";
   
   String responseStr;
